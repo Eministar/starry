@@ -2,17 +2,17 @@ import discord
 from discord import app_commands
 from discord.ext import commands, tasks
 
-from bot.cogs.dm_listener import DMListener
-from bot.cogs.forum_listener import ForumListener
-from bot.cogs.ticket_commands import TicketCommands
+from bot.modules.tickets.cogs.ticket_dm_listener import TicketDMListener
+from bot.modules.tickets.cogs.ticket_forum_listener import TicketForumListener
+from bot.modules.tickets.cogs.ticket_commands import TicketCommands
 
-from bot.cogs.moderation_commands import ModerationCommands
-from bot.cogs.modlog_listener import ModLogListener
-from bot.cogs.channel_role_log_listener import ChannelRoleLogListener
+from bot.modules.moderation.cogs.moderation_commands import ModerationCommands
+from bot.modules.logs.cogs.modlog_listener import ModLogListener
+from bot.modules.logs.cogs.channel_role_log_listener import ChannelRoleLogListener
 
 from bot.core.presence import PresenceRotator
-from bot.logs.forum_log_service import ForumLogService
-from bot.utils.mod_formatting import build_bot_error_embed
+from bot.modules.logs.forum_log_service import ForumLogService
+from bot.modules.logs.formatting.log_embeds import build_bot_error_embed
 
 
 class StarryBot(commands.Bot):
@@ -22,6 +22,8 @@ class StarryBot(commands.Bot):
         intents.members = True
         intents.guilds = True
         intents.messages = True
+        intents.dm_messages = True
+        intents.guild_messages = True
 
         super().__init__(
             command_prefix=commands.when_mentioned_or("!"),
@@ -38,8 +40,8 @@ class StarryBot(commands.Bot):
         self.reload_settings_loop.start()
 
     async def setup_hook(self):
-        await self.add_cog(DMListener(self))
-        await self.add_cog(ForumListener(self))
+        await self.add_cog(TicketDMListener(self))
+        await self.add_cog(TicketForumListener(self))
         await self.add_cog(TicketCommands(self))
 
         await self.add_cog(ModerationCommands(self))

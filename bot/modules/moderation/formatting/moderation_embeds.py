@@ -1,0 +1,162 @@
+from __future__ import annotations
+
+import discord
+from bot.utils.emojis import em
+
+
+def parse_hex_color(value: str | None, default: int = 0xB16B91) -> int:
+    if not value:
+        return default
+    v = str(value).strip().replace("#", "")
+    try:
+        return int(v, 16)
+    except Exception:
+        return default
+
+
+def _color(settings) -> int:
+    return parse_hex_color(settings.get("design.accent_color", "#B16B91"), 0xB16B91)
+
+
+def _footer(emb: discord.Embed, settings):
+    ft = settings.get("design.footer_text", None)
+    if ft:
+        emb.set_footer(text=str(ft))
+
+
+def _cut(s: str | None, n: int) -> str:
+    if not s:
+        return ""
+    s = str(s)
+    return s if len(s) <= n else s[: n - 3] + "..."
+
+
+def build_timeout_embed(
+    settings,
+    guild: discord.Guild,
+    moderator: discord.Member,
+    target: discord.Member,
+    minutes: int,
+    strikes: int,
+    reason: str | None,
+):
+    orange = em(settings, "orange", guild) or "🟠"
+    arrow2 = em(settings, "arrow2", guild) or "»"
+
+    desc = (
+        f"{arrow2} Timeout wurde angewendet.\n\n"
+        f"┏`👤` - User: {target.mention} ({target.id})\n"
+        f"┣`🧑‍⚖️` - Moderator: {moderator.mention}\n"
+        f"┣`⏳` - Dauer: **{int(minutes)} Minuten**\n"
+        f"┣`📌` - Strikes: **{int(strikes)}**\n"
+        f"┗`📝` - Grund: {_cut(reason, 900) if reason else '—'}"
+    )
+
+    emb = discord.Embed(title=f"{orange} 𑁉 TIMEOUT", description=desc, color=_color(settings))
+    emb.set_author(name=moderator.display_name, icon_url=moderator.display_avatar.url)
+    _footer(emb, settings)
+    return emb
+
+
+def build_warn_embed(
+    settings,
+    guild: discord.Guild,
+    moderator: discord.Member,
+    target: discord.Member,
+    strikes: int,
+    reason: str | None,
+):
+    info = em(settings, "info", guild) or "ℹ️"
+    arrow2 = em(settings, "arrow2", guild) or "»"
+
+    desc = (
+        f"{arrow2} Warnung wurde vergeben.\n\n"
+        f"┏`👤` - User: {target.mention} ({target.id})\n"
+        f"┣`🧑‍⚖️` - Moderator: {moderator.mention}\n"
+        f"┣`📌` - Strikes: **{int(strikes)}**\n"
+        f"┗`📝` - Grund: {_cut(reason, 900) if reason else '—'}"
+    )
+
+    emb = discord.Embed(title=f"{info} 𑁉 WARNUNG", description=desc, color=_color(settings))
+    emb.set_author(name=moderator.display_name, icon_url=moderator.display_avatar.url)
+    _footer(emb, settings)
+    return emb
+
+
+def build_kick_embed(
+    settings,
+    guild: discord.Guild,
+    moderator: discord.Member,
+    target: discord.Member,
+    reason: str | None,
+):
+    red = em(settings, "red", guild) or "🟥"
+    arrow2 = em(settings, "arrow2", guild) or "»"
+
+    desc = (
+        f"{arrow2} User wurde gekickt.\n\n"
+        f"┏`👤` - User: {target.mention} ({target.id})\n"
+        f"┣`🧑‍⚖️` - Moderator: {moderator.mention}\n"
+        f"┗`📝` - Grund: {_cut(reason, 900) if reason else '—'}"
+    )
+
+    emb = discord.Embed(title=f"{red} 𑁉 KICK", description=desc, color=_color(settings))
+    emb.set_author(name=moderator.display_name, icon_url=moderator.display_avatar.url)
+    _footer(emb, settings)
+    return emb
+
+
+def build_ban_embed(
+    settings,
+    guild: discord.Guild,
+    moderator: discord.Member,
+    target: discord.User | discord.Member,
+    delete_days: int,
+    reason: str | None,
+):
+    red = em(settings, "red", guild) or "🟥"
+    arrow2 = em(settings, "arrow2", guild) or "»"
+
+    uid = int(getattr(target, "id", 0))
+    mention = f"<@{uid}>" if uid else "—"
+
+    desc = (
+        f"{arrow2} User wurde gebannt.\n\n"
+        f"┏`👤` - User: {mention} ({uid})\n"
+        f"┣`🧑‍⚖️` - Moderator: {moderator.mention}\n"
+        f"┣`🧹` - Delete Days: **{int(delete_days)}**\n"
+        f"┗`📝` - Grund: {_cut(reason, 900) if reason else '—'}"
+    )
+
+    emb = discord.Embed(title=f"{red} 𑁉 BAN", description=desc, color=_color(settings))
+    emb.set_author(name=moderator.display_name, icon_url=moderator.display_avatar.url)
+    _footer(emb, settings)
+    return emb
+
+
+def build_purge_embed(
+    settings,
+    guild: discord.Guild,
+    moderator: discord.Member,
+    channel: discord.TextChannel,
+    deleted: int,
+    requested: int,
+    user: discord.Member | None,
+):
+    broom = em(settings, "money", guild) or "🧹"
+    arrow2 = em(settings, "arrow2", guild) or "»"
+    who = user.mention if user else "Alle"
+
+    desc = (
+        f"{arrow2} Nachrichten wurden gelöscht.\n\n"
+        f"┏`📍` - Kanal: {channel.mention} ({channel.id})\n"
+        f"┣`🧑‍⚖️` - Moderator: {moderator.mention}\n"
+        f"┣`👤` - Filter: {who}\n"
+        f"┣`📦` - Requested: **{int(requested)}**\n"
+        f"┗`✅` - Deleted: **{int(deleted)}**"
+    )
+
+    emb = discord.Embed(title=f"{broom} 𑁉 PURGE", description=desc, color=_color(settings))
+    emb.set_author(name=moderator.display_name, icon_url=moderator.display_avatar.url)
+    _footer(emb, settings)
+    return emb

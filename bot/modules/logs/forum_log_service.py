@@ -8,11 +8,11 @@ from bot.utils.emojis import em
 
 class ForumLogService:
     DEFAULT_THREADS: dict[str, str] = {
-        "join_leave": "👤 ~ Server-Beitritte & Leaves",
+        "join_leave": "✅ ~ Server-Beitritte & Leaves",
         "message_updates": "💬 ~ Nachricht-Updates",
-        "channel_role": "📢 ~ Kanal-& Rollen-Änderungen",
-        "punishments": "👮 ~ Bestrafungen",
-        "bot_errors": "❌ × Bot Fehlermeldungen",
+        "channel_role": "🧩 ~ Kanal- & Rollen-Änderungen",
+        "punishments": "⚖️ ~ Bestrafungen",
+        "bot_errors": "🚨 ~ Bot Fehlermeldungen",
     }
 
     def __init__(self, bot: discord.Client, settings, db):
@@ -58,7 +58,7 @@ class ForumLogService:
             return int(stored)
 
         name = title[:100]
-        green = em(self.settings, "green", guild) or "🟩"
+        green = em(self.settings, "green", guild) or "✅"
         content = f"{green} - Dieser Thread postet nun alle **{title}**."
 
         created = await forum.create_thread(name=name, content=content)

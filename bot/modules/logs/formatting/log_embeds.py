@@ -3,7 +3,6 @@ from __future__ import annotations
 import traceback
 import discord
 from discord.utils import format_dt
-from datetime import datetime
 from bot.utils.emojis import em
 
 
@@ -40,96 +39,60 @@ def _actor_line(actor: discord.Member | None) -> str:
     return f"{actor.mention} ({actor.id})"
 
 
-def build_timeout_embed(settings, guild: discord.Guild, moderator: discord.Member, target: discord.Member, minutes: int, strikes: int, reason: str | None):
-    orange = em(settings, "orange", guild) or "🟠"
-    arrow2 = em(settings, "arrow2", guild) or "»"
-    desc = (
-        f"{arrow2} Timeout wurde angewendet.\n\n"
-        f"┏`👤` - User: {target.mention} ({target.id})\n"
-        f"┣`🧑‍⚖️` - Moderator: {moderator.mention}\n"
-        f"┣`⏳` - Dauer: **{minutes} Minuten**\n"
-        f"┣`📌` - Strikes: **{strikes}**\n"
-        f"┗`📝` - Grund: {_cut(reason, 900) if reason else '—'}"
+def _channel_kind(ch: discord.abc.GuildChannel) -> str:
+    try:
+        t = getattr(ch, "type", None)
+        return str(t)
+    except Exception:
+        return "unknown"
+
+
+def _boxed_kv(payload: dict | None, inline_code: bool = True) -> str:
+    items = list((payload or {}).items())
+    if not items:
+        return "┗`info`: keine Daten"
+    lines: list[str] = []
+    for i, (k, v) in enumerate(items):
+        if i == 0:
+            prefix = "┏"
+        elif i == len(items) - 1:
+            prefix = "┗"
+        else:
+            prefix = "┣"
+
+        key = f"`{k}`" if inline_code else str(k)
+        lines.append(f"{prefix}{key}: {v}")
+    return "\n".join(lines)
+
+
+def build_log_embed(settings, event: str, payload: dict):
+    info = em(settings, "info", None) or "ℹ️"
+    arrow2 = em(settings, "arrow2", None) or "»"
+
+    desc = f"{arrow2} Event wurde geloggt.\n\n{_boxed_kv(payload)}"
+    emb = discord.Embed(
+        title=f"{info} 𑁉 LOG • {str(event).upper()}",
+        description=desc,
+        color=_color(settings),
     )
-    emb = discord.Embed(title=f"{orange} 𑁉 TIMEOUT", description=desc, color=_color(settings))
-    emb.set_author(name=moderator.display_name, icon_url=moderator.display_avatar.url)
     _footer(emb, settings)
     return emb
 
 
-def build_warn_embed(settings, guild: discord.Guild, moderator: discord.Member, target: discord.Member, strikes: int, reason: str | None):
-    info = em(settings, "info", guild) or "ℹ️"
-    arrow2 = em(settings, "arrow2", guild) or "»"
-    desc = (
-        f"{arrow2} Warnung wurde vergeben.\n\n"
-        f"┏`👤` - User: {target.mention} ({target.id})\n"
-        f"┣`🧑‍⚖️` - Moderator: {moderator.mention}\n"
-        f"┣`📌` - Strikes: **{strikes}**\n"
-        f"┗`📝` - Grund: {_cut(reason, 900) if reason else '—'}"
-    )
-    emb = discord.Embed(title=f"{info} 𑁉 WARNUNG", description=desc, color=_color(settings))
-    emb.set_author(name=moderator.display_name, icon_url=moderator.display_avatar.url)
-    _footer(emb, settings)
-    return emb
-
-
-def build_kick_embed(settings, guild: discord.Guild, moderator: discord.Member, target: discord.Member, reason: str | None):
-    red = em(settings, "red", guild) or "🟥"
-    arrow2 = em(settings, "arrow2", guild) or "»"
-    desc = (
-        f"{arrow2} User wurde gekickt.\n\n"
-        f"┏`👤` - User: {target.mention} ({target.id})\n"
-        f"┣`🧑‍⚖️` - Moderator: {moderator.mention}\n"
-        f"┗`📝` - Grund: {_cut(reason, 900) if reason else '—'}"
-    )
-    emb = discord.Embed(title=f"{red} 𑁉 KICK", description=desc, color=_color(settings))
-    emb.set_author(name=moderator.display_name, icon_url=moderator.display_avatar.url)
-    _footer(emb, settings)
-    return emb
-
-
-def build_ban_embed(settings, guild: discord.Guild, moderator: discord.Member, target: discord.User | discord.Member, delete_days: int, reason: str | None):
-    red = em(settings, "red", guild) or "🟥"
-    arrow2 = em(settings, "arrow2", guild) or "»"
-    uid = int(getattr(target, "id", 0))
-    mention = f"<@{uid}>" if uid else "—"
-    desc = (
-        f"{arrow2} User wurde gebannt.\n\n"
-        f"┏`👤` - User: {mention} ({uid})\n"
-        f"┣`🧑‍⚖️` - Moderator: {moderator.mention}\n"
-        f"┣`🧹` - Delete Days: **{int(delete_days)}**\n"
-        f"┗`📝` - Grund: {_cut(reason, 900) if reason else '—'}"
-    )
-    emb = discord.Embed(title=f"{red} 𑁉 BAN", description=desc, color=_color(settings))
-    emb.set_author(name=moderator.display_name, icon_url=moderator.display_avatar.url)
-    _footer(emb, settings)
-    return emb
-
-
-def build_purge_embed(settings, guild: discord.Guild, moderator: discord.Member, channel: discord.TextChannel, deleted: int, requested: int, user: discord.Member | None):
-    money = em(settings, "money", guild) or "🧹"
-    arrow2 = em(settings, "arrow2", guild) or "»"
-    who = user.mention if user else "Alle"
-    desc = (
-        f"{arrow2} Nachrichten wurden gelöscht.\n\n"
-        f"┏`📍` - Kanal: {channel.mention} ({channel.id})\n"
-        f"┣`🧑‍⚖️` - Moderator: {moderator.mention}\n"
-        f"┣`👤` - Filter: {who}\n"
-        f"┣`📦` - Requested: **{int(requested)}**\n"
-        f"┗`✅` - Deleted: **{int(deleted)}**"
-    )
-    emb = discord.Embed(title=f"{money} 𑁉 PURGE", description=desc, color=_color(settings))
-    emb.set_author(name=moderator.display_name, icon_url=moderator.display_avatar.url)
-    _footer(emb, settings)
-    return emb
-
-
-def build_message_edited_embed(settings, guild: discord.Guild, author: discord.Member | None, channel: discord.abc.GuildChannel, before: str, after: str, msg_id: int):
+def build_message_edited_embed(
+    settings,
+    guild: discord.Guild,
+    author: discord.Member | None,
+    channel: discord.abc.GuildChannel,
+    before: str,
+    after: str,
+    msg_id: int,
+):
     chat = em(settings, "chat", guild) or "💬"
     desc = (
         f"┏`👤` - User: {author.mention if author else 'Unbekannt'} ({author.id if author else '—'})\n"
         f"┣`📍` - Nachricht: {channel.mention}\n"
-        f"┗`🆔` - ID: `{msg_id}`\n\n"
+        f"┗`🆔` - ID: `{int(msg_id)}`\n\n"
         f"🔴 **Vorher:**\n{_cut(before, 1500) or '—'}\n\n"
         f"🟢 **Nachher:**\n{_cut(after, 1500) or '—'}"
     )
@@ -138,12 +101,19 @@ def build_message_edited_embed(settings, guild: discord.Guild, author: discord.M
     return emb
 
 
-def build_message_deleted_embed(settings, guild: discord.Guild, author: discord.Member | None, channel: discord.abc.GuildChannel, content: str, msg_id: int):
+def build_message_deleted_embed(
+    settings,
+    guild: discord.Guild,
+    author: discord.Member | None,
+    channel: discord.abc.GuildChannel,
+    content: str,
+    msg_id: int,
+):
     red = em(settings, "red", guild) or "🟥"
     desc = (
         f"┏`👤` - User: {author.mention if author else 'Unbekannt'} ({author.id if author else '—'})\n"
         f"┣`📍` - Kanal: {channel.mention}\n"
-        f"┗`🆔` - ID: `{msg_id}`\n\n"
+        f"┗`🆔` - ID: `{int(msg_id)}`\n\n"
         f"┏`📝` - Nachricht-Inhalt:\n{_cut(content, 1800) or '—'}"
     )
     emb = discord.Embed(title=f"{red} 𑁉 NACHRICHT GELÖSCHT!", description=desc, color=_color(settings))
@@ -165,19 +135,14 @@ def build_join_embed(settings, guild: discord.Guild, member: discord.Member):
 
 def build_leave_embed(settings, guild: discord.Guild, user: discord.User):
     red = em(settings, "red", guild) or "🟥"
-    desc = f"┏`👤` - User: <@{user.id}> ({user.id})\n┗`🌈` - Account erstellt: {format_dt(user.created_at, style='R')}"
+    desc = (
+        f"┏`👤` - User: <@{user.id}> ({user.id})\n"
+        f"┗`🌈` - Account erstellt: {format_dt(user.created_at, style='R')}"
+    )
     emb = discord.Embed(title=f"{red} 𑁉 LEAVE", description=desc, color=_color(settings))
     emb.set_thumbnail(url=user.display_avatar.url)
     _footer(emb, settings)
     return emb
-
-
-def _channel_kind(ch: discord.abc.GuildChannel) -> str:
-    try:
-        t = getattr(ch, "type", None)
-        return str(t)
-    except Exception:
-        return "unknown"
 
 
 def build_channel_created_embed(settings, guild: discord.Guild, channel: discord.abc.GuildChannel, actor: discord.Member | None):
@@ -205,7 +170,13 @@ def build_channel_deleted_embed(settings, guild: discord.Guild, channel: discord
     return emb
 
 
-def build_channel_updated_embed(settings, guild: discord.Guild, before: discord.abc.GuildChannel, after: discord.abc.GuildChannel, actor: discord.Member | None):
+def build_channel_updated_embed(
+    settings,
+    guild: discord.Guild,
+    before: discord.abc.GuildChannel,
+    after: discord.abc.GuildChannel,
+    actor: discord.Member | None,
+):
     changes: list[str] = []
 
     try:
@@ -217,7 +188,9 @@ def build_channel_updated_embed(settings, guild: discord.Guild, before: discord.
     try:
         if hasattr(before, "topic") and hasattr(after, "topic"):
             if getattr(before, "topic", None) != getattr(after, "topic", None):
-                changes.append(f"┏`📌` - Topic:\n`{_cut(getattr(before,'topic',None),200) or '—'}` → `{_cut(getattr(after,'topic',None),200) or '—'}`")
+                changes.append(
+                    f"┏`📌` - Topic:\n`{_cut(getattr(before,'topic',None),200) or '—'}` → `{_cut(getattr(after,'topic',None),200) or '—'}`"
+                )
     except Exception:
         pass
 
@@ -335,12 +308,11 @@ def build_member_roles_changed_embed(settings, guild: discord.Guild, before: dis
 
 def build_bot_error_embed(settings, guild: discord.Guild | None, where: str, err: BaseException, extra: dict | None = None):
     red = em(settings, "red", guild) or "🟥"
-    info = em(settings, "info", guild) or "ℹ️"
 
     tb = "".join(traceback.format_exception(type(err), err, err.__traceback__))
     tb = _cut(tb, 1800)
 
-    lines = []
+    lines: list[str] = []
     if extra:
         for k, v in extra.items():
             lines.append(f"┣`{k}`: {v}")

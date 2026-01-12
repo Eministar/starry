@@ -4,7 +4,7 @@ import time
 import discord
 from discord.ext import commands
 
-from bot.utils.mod_formatting import (
+from bot.modules.logs.formatting.log_embeds import (
     build_channel_created_embed,
     build_channel_deleted_embed,
     build_channel_updated_embed,

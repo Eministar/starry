@@ -4,8 +4,8 @@ import discord
 from discord import app_commands
 from discord.ext import commands
 
-from bot.utils.perms import is_staff
-from bot.moderation.mod_service import ModerationService
+from bot.core.perms import is_staff
+from bot.modules.moderation.services.mod_service import ModerationService
 
 
 async def _ephemeral(interaction: discord.Interaction, text: str):

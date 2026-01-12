@@ -3,7 +3,7 @@ from __future__ import annotations
 import discord
 from discord.ext import commands
 
-from bot.utils.mod_formatting import (
+from bot.modules.logs.formatting.log_embeds import (
     build_message_edited_embed,
     build_message_deleted_embed,
     build_join_embed,

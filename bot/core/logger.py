@@ -2,7 +2,7 @@ import os
 import json
 import discord
 
-from bot.utils.formatting import build_log_embed
+from bot.modules.logs.formatting.log_embeds import build_log_embed
 
 class StarryLogger:
     def __init__(self, settings, db):

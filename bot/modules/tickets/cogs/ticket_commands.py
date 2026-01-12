@@ -2,8 +2,8 @@ import discord
 from discord import app_commands
 from discord.ext import commands
 
-from bot.tickets.service import TicketService
-from bot.utils.perms import is_staff
+from bot.modules.tickets.services.ticket_service import TicketService
+from bot.core.perms import is_staff
 
 
 class TicketCommands(commands.Cog):
@@ -27,4 +27,4 @@ class TicketCommands(commands.Cog):
             return await interaction.response.send_message("Nur im Server nutzbar.", ephemeral=True)
         if not is_staff(self.bot.settings, interaction.user):
             return await interaction.response.send_message("Keine Rechte.", ephemeral=True)
-        await interaction.response.send_message("Nutze bitte den Button „Ticket schließen“ im Embed.", ephemeral=True)
+        await interaction.response.send_message('Nutze bitte den Button "Ticket schließen" im Embed.', ephemeral=True)

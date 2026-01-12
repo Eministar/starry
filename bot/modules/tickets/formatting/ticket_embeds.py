@@ -3,6 +3,7 @@ from discord.utils import format_dt
 from datetime import datetime
 from bot.utils.emojis import em
 
+
 def parse_hex_color(value: str, default: int = 0xB16B91) -> int:
     if not value:
         return default
@@ -12,32 +13,16 @@ def parse_hex_color(value: str, default: int = 0xB16B91) -> int:
     except Exception:
         return default
 
+
 def _color(settings):
     return parse_hex_color(settings.get("design.accent_color", "#B16B91"))
+
 
 def _footer(emb: discord.Embed, settings):
     ft = settings.get("design.footer_text", None)
     if ft:
         emb.set_footer(text=str(ft))
 
-def build_log_embed(settings, event: str, payload: dict):
-    info = em(settings, "info", None)
-    arrow2 = em(settings, "arrow2", None)
-
-    lines = []
-    for k, v in (payload or {}).items():
-        lines.append(f"┏`{k}`: {v}" if not lines else f"┣`{k}`: {v}")
-    if lines:
-        lines[-1] = lines[-1].replace("┣", "┗", 1)
-
-    desc = f"{arrow2} Event wurde geloggt.\n\n" + ("\n".join(lines) if lines else "┗`info`: keine Daten")
-    emb = discord.Embed(
-        title=f"{info} 𑁉 LOG • {str(event).upper()}",
-        description=desc,
-        color=_color(settings)
-    )
-    _footer(emb, settings)
-    return emb
 
 def build_summary_embed(
     settings,
@@ -46,7 +31,7 @@ def build_summary_embed(
     member: discord.Member | None,
     category_label: str,
     created_at: datetime,
-    total_tickets: int
+    total_tickets: int,
 ):
     book = em(settings, "book", guild)
     arrow2 = em(settings, "arrow2", guild)
@@ -67,11 +52,12 @@ def build_summary_embed(
     emb = discord.Embed(
         title=f"{book} 𑁉 SUPPORT-TICKET - ZUSAMMENFASSUNG",
         description=desc,
-        color=_color(settings)
+        color=_color(settings),
     )
     emb.set_thumbnail(url=user.display_avatar.url)
     _footer(emb, settings)
     return emb
+
 
 def build_user_message_embed(settings, guild: discord.Guild | None, user: discord.User, content: str):
     arrow2 = em(settings, "arrow2", guild)
@@ -80,6 +66,7 @@ def build_user_message_embed(settings, guild: discord.Guild | None, user: discor
     emb.set_author(name=user.display_name, icon_url=user.display_avatar.url)
     _footer(emb, settings)
     return emb
+
 
 def build_dm_ticket_created_embed(settings, guild: discord.Guild | None, ticket_id: int, created_at: datetime):
     book = em(settings, "book", guild)
@@ -97,10 +84,11 @@ def build_dm_ticket_created_embed(settings, guild: discord.Guild | None, ticket_
     emb = discord.Embed(
         title=f"{book} 𑁉 SUPPORT-TICKET - BESTÄTIGUNG",
         description=desc,
-        color=_color(settings)
+        color=_color(settings),
     )
     _footer(emb, settings)
     return emb
+
 
 def build_dm_message_appended_embed(settings, guild: discord.Guild | None, ticket_id: int):
     arrow2 = em(settings, "arrow2", guild)
@@ -115,10 +103,11 @@ def build_dm_message_appended_embed(settings, guild: discord.Guild | None, ticke
     emb = discord.Embed(
         title=f"{info} 𑁉 NACHRICHT ÜBERNOMMEN",
         description=desc,
-        color=_color(settings)
+        color=_color(settings),
     )
     _footer(emb, settings)
     return emb
+
 
 def build_dm_staff_reply_embed(settings, guild: discord.Guild | None, staff: discord.Member, ticket_id: int, text: str):
     love = em(settings, "discord_love", guild)
@@ -133,11 +122,12 @@ def build_dm_staff_reply_embed(settings, guild: discord.Guild | None, staff: dis
     emb = discord.Embed(
         title=f"{love} 𑁉 TEAM-ANTWORT",
         description=desc,
-        color=_color(settings)
+        color=_color(settings),
     )
     emb.set_author(name=staff.display_name, icon_url=staff.display_avatar.url)
     _footer(emb, settings)
     return emb
+
 
 def build_dm_ticket_closed_embed(settings, guild: discord.Guild | None, ticket_id: int, closed_at: datetime, rating_enabled: bool):
     red = em(settings, "red", guild)
@@ -154,10 +144,11 @@ def build_dm_ticket_closed_embed(settings, guild: discord.Guild | None, ticket_i
     emb = discord.Embed(
         title=f"{red} 𑁉 TICKET GESCHLOSSEN",
         description=desc,
-        color=_color(settings)
+        color=_color(settings),
     )
     _footer(emb, settings)
     return emb
+
 
 def build_dm_rating_thanks_embed(settings, guild: discord.Guild | None, rating: int):
     cheers = em(settings, "cheers", guild)
@@ -172,32 +163,36 @@ def build_dm_rating_thanks_embed(settings, guild: discord.Guild | None, rating: 
     emb = discord.Embed(
         title=f"{cheers} 𑁉 BEWERTUNG GESPEICHERT",
         description=desc,
-        color=_color(settings)
+        color=_color(settings),
     )
     _footer(emb, settings)
     return emb
+
 
 def build_thread_status_embed(settings, guild: discord.Guild | None, title: str, text: str, actor: discord.Member | None = None):
     arrow2 = em(settings, "arrow2", guild)
     emb = discord.Embed(
         title=title,
         description=f"{arrow2} {text}",
-        color=_color(settings)
+        color=_color(settings),
     )
     if actor:
         emb.set_author(name=actor.display_name, icon_url=actor.display_avatar.url)
     _footer(emb, settings)
     return emb
 
+
 def build_thread_rating_embed(settings, guild: discord.Guild | None, user_id: int, rating: int, comment: str | None):
     hearts = em(settings, "hearts", guild)
+
     desc = f"┏`⭐` - Bewertung: **{rating}/5**\n┗`👤` - User: <@{user_id}>"
     if comment:
         desc += f"\n\n{comment}"
+
     emb = discord.Embed(
         title=f"{hearts} 𑁉 BEWERTUNG",
         description=desc,
-        color=_color(settings)
+        color=_color(settings),
     )
     _footer(emb, settings)
     return emb

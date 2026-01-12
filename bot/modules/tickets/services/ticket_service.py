@@ -2,9 +2,10 @@ import re
 import discord
 from datetime import datetime, timezone
 
-from bot.utils.perms import is_staff
-from bot.tickets.views import SummaryView, RatingView
-from bot.utils.formatting import (
+from bot.core.perms import is_staff
+from bot.modules.tickets.views.summary_view import SummaryView
+from bot.modules.tickets.views.rating_view import RatingView
+from bot.modules.tickets.formatting.ticket_embeds import (
     build_summary_embed,
     build_user_message_embed,
     build_dm_ticket_created_embed,
@@ -205,13 +206,13 @@ class TicketService:
         ft = self.settings.get("design.footer_text", None)
 
         if claimed:
-            title = "`🟠` 𑁉 Ticket übernommen"
+            title = "✅ Ticket übernommen"
             desc = (
                 f"Hey! Ich bin **{staff.display_name}** und werde dir heute helfen.\n\n"
                 "Antworte hier einfach per DM – das landet direkt im Ticket."
             )
         else:
-            title = "`🟢` 𑁉 Ticket freigegeben"
+            title = "🔓 Ticket freigegeben"
             desc = (
                 f"**{staff.display_name}** kümmert sich nicht mehr um dein Ticket.\n\n"
                 "Du kannst weiter antworten – das Ticket ist wieder offen."
@@ -231,14 +232,28 @@ class TicketService:
     async def handle_dm(self, message: discord.Message):
         if message.author.bot:
             return
+        await self.bot.wait_until_ready()
 
         guild_id = self.settings.get_int("bot.guild_id")
         forum_id = self.settings.get_int("bot.forum_channel_id")
         if not guild_id or not forum_id:
+            try:
+                await message.author.send("Ticket-System ist aktuell nicht konfiguriert.")
+            except Exception:
+                pass
             return
 
         guild = self.bot.get_guild(guild_id)
         if not guild:
+            try:
+                guild = await self.bot.fetch_guild(int(guild_id))
+            except Exception:
+                guild = None
+        if not guild:
+            try:
+                await message.author.send("Server nicht gefunden. Bitte melde dich beim Team.")
+            except Exception:
+                pass
             return
 
         allow_multi = self.settings.get_bool("ticket.allow_multiple_open_tickets_per_user", False)
@@ -275,6 +290,16 @@ class TicketService:
         forum_id = self.settings.get_int("bot.forum_channel_id")
         forum = guild.get_channel(forum_id)
         if not isinstance(forum, discord.ForumChannel):
+            try:
+                fetched = await self.bot.fetch_channel(int(forum_id))
+                forum = fetched if isinstance(fetched, discord.ForumChannel) else forum
+            except Exception:
+                pass
+        if not isinstance(forum, discord.ForumChannel):
+            try:
+                await dm_message.author.send("Forum-Channel nicht gefunden. Bitte melde dich beim Team.")
+            except Exception:
+                pass
             return
 
         user = dm_message.author
@@ -312,13 +337,24 @@ class TicketService:
         view = SummaryView(self, ticket_id=0)
 
         thread_name = f"{prefix} {user.display_name}"
-        created = await forum.create_thread(
-            name=_truncate(thread_name, 100),
-            content=content_head,
-            embeds=[summary_embed],
-            view=view,
-            applied_tags=applied_tags,
-        )
+        try:
+            created = await forum.create_thread(
+                name=_truncate(thread_name, 100),
+                content=content_head,
+                embeds=[summary_embed],
+                view=view,
+                applied_tags=applied_tags,
+            )
+        except Exception as e:
+            try:
+                await dm_message.author.send("Ticket konnte nicht erstellt werden. Bitte melde dich beim Team.")
+            except Exception:
+                pass
+            try:
+                await self.logger.emit(self.bot, "ticket_create_failed", {"user_id": dm_message.author.id, "error": f"{type(e).__name__}: {e}"})
+            except Exception:
+                pass
+            return
 
         thread = created.thread
         msg = created.message
@@ -462,7 +498,7 @@ class TicketService:
                 emb = build_thread_status_embed(
                     self.settings,
                     interaction.guild,
-                    "`🟢` Ticket freigegeben",
+                    "🔓 Ticket freigegeben",
                     f"{interaction.user.mention} kümmert sich nicht mehr um dieses Ticket.",
                     interaction.user
                 )
@@ -489,7 +525,7 @@ class TicketService:
             emb = build_thread_status_embed(
                 self.settings,
                 interaction.guild,
-                "`🟠` Ticket übernommen",
+                "✅ Ticket übernommen",
                 f"Hey! Ich bin {interaction.user.mention} und werde dir heute helfen.",
                 interaction.user
             )
@@ -533,7 +569,7 @@ class TicketService:
         note_text = _truncate((text or "").strip(), 3500) if text else " "
 
         try:
-            emb = build_thread_status_embed(self.settings, interaction.guild, "📝 𑁉 TEAM-NOTIZ", note_text, interaction.user)
+            emb = build_thread_status_embed(self.settings, interaction.guild, "📝 TEAM-NOTIZ", note_text, interaction.user)
             await thread.send(embed=emb)
         except Exception:
             pass
@@ -597,7 +633,7 @@ class TicketService:
             status_text = "Ticket wurde geschlossen und archiviert."
             if not dm_ok:
                 status_text += "\n\n⚠️ User konnte nicht per DM erreicht werden."
-            emb = build_thread_status_embed(self.settings, interaction.guild, "🔴 Ticket geschlossen", status_text, interaction.user)
+            emb = build_thread_status_embed(self.settings, interaction.guild, "🔒 Ticket geschlossen", status_text, interaction.user)
             await thread.send(embed=emb)
         except Exception:
             pass
@@ -680,3 +716,6 @@ class TicketService:
                     await thread.send(embed=emb)
         except Exception:
             pass
+
+
+

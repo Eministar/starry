@@ -1,8 +1,9 @@
 import discord
 from discord.ext import commands
-from bot.tickets.service import TicketService
+from bot.modules.tickets.services.ticket_service import TicketService
 
-class ForumListener(commands.Cog):
+
+class TicketForumListener(commands.Cog):
     def __init__(self, bot):
         self.bot = bot
         self.service = TicketService(bot, bot.settings, bot.db, bot.logger)

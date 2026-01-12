@@ -3,8 +3,8 @@ from __future__ import annotations
 from datetime import datetime, timedelta, timezone
 import discord
 
-from bot.moderation.penalty import PenaltyEngine
-from bot.utils.mod_formatting import (
+from bot.modules.moderation.services.penalty import PenaltyEngine
+from bot.modules.moderation.formatting.moderation_embeds import (
     build_timeout_embed,
     build_warn_embed,
     build_kick_embed,
