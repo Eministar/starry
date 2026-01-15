@@ -51,7 +51,7 @@ async def main():
 
     bot = StarryBot(settings=settings, db=db, logger=logger)
 
-    web = WebServer(settings=settings, db=db)
+    web = WebServer(settings=settings, db=db, bot=bot)
 
     stop_event = asyncio.Event()
 

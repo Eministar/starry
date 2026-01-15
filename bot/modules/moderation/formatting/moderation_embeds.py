@@ -39,6 +39,7 @@ def build_timeout_embed(
     minutes: int,
     strikes: int,
     reason: str | None,
+    case_id: int | None = None,
 ):
     orange = em(settings, "orange", guild) or "🟠"
     arrow2 = em(settings, "arrow2", guild) or "»"
@@ -49,6 +50,7 @@ def build_timeout_embed(
         f"┣`🧑‍⚖️` - Moderator: {moderator.mention}\n"
         f"┣`⏳` - Dauer: **{int(minutes)} Minuten**\n"
         f"┣`📌` - Strikes: **{int(strikes)}**\n"
+        f"┣`🆔` - Case: `{case_id if case_id else '—'}`\n"
         f"┗`📝` - Grund: {_cut(reason, 900) if reason else '—'}"
     )
 
@@ -65,6 +67,7 @@ def build_warn_embed(
     target: discord.Member,
     strikes: int,
     reason: str | None,
+    case_id: int | None = None,
 ):
     info = em(settings, "info", guild) or "ℹ️"
     arrow2 = em(settings, "arrow2", guild) or "»"
@@ -74,6 +77,7 @@ def build_warn_embed(
         f"┏`👤` - User: {target.mention} ({target.id})\n"
         f"┣`🧑‍⚖️` - Moderator: {moderator.mention}\n"
         f"┣`📌` - Strikes: **{int(strikes)}**\n"
+        f"┣`🆔` - Case: `{case_id if case_id else '—'}`\n"
         f"┗`📝` - Grund: {_cut(reason, 900) if reason else '—'}"
     )
 
@@ -89,6 +93,7 @@ def build_kick_embed(
     moderator: discord.Member,
     target: discord.Member,
     reason: str | None,
+    case_id: int | None = None,
 ):
     red = em(settings, "red", guild) or "🟥"
     arrow2 = em(settings, "arrow2", guild) or "»"
@@ -97,6 +102,7 @@ def build_kick_embed(
         f"{arrow2} User wurde gekickt.\n\n"
         f"┏`👤` - User: {target.mention} ({target.id})\n"
         f"┣`🧑‍⚖️` - Moderator: {moderator.mention}\n"
+        f"┣`🆔` - Case: `{case_id if case_id else '—'}`\n"
         f"┗`📝` - Grund: {_cut(reason, 900) if reason else '—'}"
     )
 
@@ -113,6 +119,7 @@ def build_ban_embed(
     target: discord.User | discord.Member,
     delete_days: int,
     reason: str | None,
+    case_id: int | None = None,
 ):
     red = em(settings, "red", guild) or "🟥"
     arrow2 = em(settings, "arrow2", guild) or "»"
@@ -125,6 +132,7 @@ def build_ban_embed(
         f"┏`👤` - User: {mention} ({uid})\n"
         f"┣`🧑‍⚖️` - Moderator: {moderator.mention}\n"
         f"┣`🧹` - Delete Days: **{int(delete_days)}**\n"
+        f"┣`🆔` - Case: `{case_id if case_id else '—'}`\n"
         f"┗`📝` - Grund: {_cut(reason, 900) if reason else '—'}"
     )
 
@@ -142,6 +150,7 @@ def build_purge_embed(
     deleted: int,
     requested: int,
     user: discord.Member | None,
+    case_id: int | None = None,
 ):
     broom = em(settings, "money", guild) or "🧹"
     arrow2 = em(settings, "arrow2", guild) or "»"
@@ -153,6 +162,7 @@ def build_purge_embed(
         f"┣`🧑‍⚖️` - Moderator: {moderator.mention}\n"
         f"┣`👤` - Filter: {who}\n"
         f"┣`📦` - Requested: **{int(requested)}**\n"
+        f"┣`🆔` - Case: `{case_id if case_id else '—'}`\n"
         f"┗`✅` - Deleted: **{int(deleted)}**"
     )
 

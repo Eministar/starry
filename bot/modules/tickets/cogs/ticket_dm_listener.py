@@ -6,7 +6,7 @@ from bot.modules.tickets.services.ticket_service import TicketService
 class TicketDMListener(commands.Cog):
     def __init__(self, bot):
         self.bot = bot
-        self.service = TicketService(bot, bot.settings, bot.db, bot.logger)
+        self.service = getattr(bot, "ticket_service", None) or TicketService(bot, bot.settings, bot.db, bot.logger)
 
     @commands.Cog.listener()
     async def on_message(self, message: discord.Message):

@@ -1,14 +1,37 @@
 import discord
+from datetime import datetime, timezone
 from discord import app_commands
 from discord.ext import commands, tasks
 
 from bot.modules.tickets.cogs.ticket_dm_listener import TicketDMListener
 from bot.modules.tickets.cogs.ticket_forum_listener import TicketForumListener
 from bot.modules.tickets.cogs.ticket_commands import TicketCommands
+from bot.modules.tickets.cogs.text_snippets import TextSnippetsCommands
+from bot.modules.tickets.services.ticket_service import TicketService
+from bot.modules.tickets.views.summary_view import SummaryView
+from bot.modules.tickets.views.rating_view import RatingButton
+from bot.modules.user_stats.cogs.user_stats_listener import UserStatsListener
+from bot.modules.user_stats.cogs.user_stats_commands import UserStatsCommands
+from bot.modules.user_stats.services.user_stats_service import UserStatsService
+from bot.modules.backup.cogs.backup_commands import BackupCommands
+from bot.modules.backup.services.backup_service import BackupService
+from bot.modules.birthdays.cogs.birthday_listener import BirthdayListener
+from bot.modules.birthdays.cogs.birthday_commands import BirthdayCommands
+from bot.modules.birthdays.services.birthday_service import BirthdayService
+from bot.modules.roles.cogs.roles_commands import RolesCommands
+from bot.modules.giveaways.cogs.giveaway_commands import GiveawayCommands
+from bot.modules.giveaways.cogs.giveaway_listener import GiveawayListener
+from bot.modules.giveaways.services.giveaway_service import GiveawayService
+from bot.modules.polls.cogs.poll_commands import PollCommands
+from bot.modules.polls.services.poll_service import PollService
 
-from bot.modules.moderation.cogs.moderation_commands import ModerationCommands
+from bot.modules.moderation.cogs.moderation_commands import ModerationCommands  
 from bot.modules.logs.cogs.modlog_listener import ModLogListener
 from bot.modules.logs.cogs.channel_role_log_listener import ChannelRoleLogListener
+from bot.modules.applications.cogs.application_commands import ApplicationCommands
+from bot.modules.tempvoice.cogs.tempvoice_listener import TempVoiceListener
+from bot.modules.tempvoice.cogs.tempvoice_commands import TempVoiceCommands
+from bot.modules.tempvoice.services.tempvoice_service import TempVoiceService
 
 from bot.core.presence import PresenceRotator
 from bot.modules.logs.forum_log_service import ForumLogService
@@ -20,6 +43,7 @@ class StarryBot(commands.Bot):
         intents = discord.Intents.default()
         intents.message_content = True
         intents.members = True
+        intents.presences = True
         intents.guilds = True
         intents.messages = True
         intents.dm_messages = True
@@ -34,19 +58,47 @@ class StarryBot(commands.Bot):
         self.db = db
         self.logger = logger
 
+        self.ticket_service = TicketService(self, self.settings, self.db, self.logger)
+        self.user_stats_service = UserStatsService(self, self.settings, self.db, self.logger)
+        self.backup_service = BackupService(self, self.settings, self.db, self.logger)
+        self.birthday_service = BirthdayService(self, self.settings, self.db, self.logger)
+        self.giveaway_service = GiveawayService(self, self.settings, self.db, self.logger)
+        self.poll_service = PollService(self, self.settings, self.db, self.logger)
+        self.tempvoice_service = TempVoiceService(self, self.settings, self.db, self.logger)
+
         self.forum_logs = ForumLogService(self, self.settings, self.db)
         self._boot_done = False
 
         self.reload_settings_loop.start()
+        self.ticket_automation_loop.start()
+        self.backup_autosave_loop.start()
+        self.birthday_loop.start()
+        self.giveaway_loop.start()
 
     async def setup_hook(self):
         await self.add_cog(TicketDMListener(self))
         await self.add_cog(TicketForumListener(self))
         await self.add_cog(TicketCommands(self))
+        await self.add_cog(TextSnippetsCommands(self))
+        await self.add_cog(UserStatsListener(self))
+        await self.add_cog(UserStatsCommands(self))
+        await self.add_cog(BackupCommands(self))
+        await self.add_cog(BirthdayListener(self))
+        await self.add_cog(BirthdayCommands(self))
+        await self.add_cog(RolesCommands(self))
+        await self.add_cog(GiveawayCommands(self))
+        await self.add_cog(GiveawayListener(self))
+        await self.add_cog(PollCommands(self))
+        await self.add_cog(TempVoiceListener(self))
+        await self.add_cog(TempVoiceCommands(self))
 
         await self.add_cog(ModerationCommands(self))
         await self.add_cog(ModLogListener(self))
         await self.add_cog(ChannelRoleLogListener(self))
+        await self.add_cog(ApplicationCommands(self))
+
+        self.add_view(SummaryView(self.ticket_service, ticket_id=0, status="open"))
+        self.add_dynamic_items(RatingButton)
 
         @self.tree.error
         async def on_app_command_error(interaction: discord.Interaction, error: app_commands.AppCommandError):
@@ -68,15 +120,103 @@ class StarryBot(commands.Bot):
         if changed:
             await self.logger.emit_system("settings_reloaded", {"source": "dashboard_override"})
 
+    @tasks.loop(seconds=60.0)
+    async def ticket_automation_loop(self):
+        try:
+            await self.ticket_service.run_automation()
+        except Exception:
+            pass
+
+    @tasks.loop(seconds=600.0)
+    async def backup_autosave_loop(self):
+        if not self.settings.get_bool("backup.enabled", True):
+            return
+        if not self.settings.get_bool("backup.auto_save_enabled", False):
+            return
+        guild_id = self.settings.get_int("bot.guild_id")
+        if not guild_id:
+            return
+        guild = self.get_guild(guild_id)
+        if not guild:
+            return
+        interval_hours = float(self.settings.get("backup.auto_save_interval_hours", 24) or 24)
+        last = self.settings.get("backup.last_auto_save_at", None)
+        now = datetime.now(timezone.utc)
+        if last:
+            try:
+                last_dt = datetime.fromisoformat(str(last))
+            except Exception:
+                last_dt = None
+            if last_dt and (now - last_dt).total_seconds() < interval_hours * 3600:
+                return
+        name = self.settings.get("backup.auto_save_name", "autosave")
+        try:
+            await self.backup_service.create_backup(guild, name=f"{name}-{now.strftime('%Y%m%d-%H%M')}")
+            await self.settings.set_override("backup.last_auto_save_at", now.isoformat())
+        except Exception:
+            pass
+
+    @tasks.loop(seconds=30.0)
+    async def birthday_loop(self):
+        if not self.settings.get_bool("birthday.enabled", True):
+            return
+        try:
+            await self.birthday_service.tick_midnight()
+        except Exception:
+            pass
+
+    @tasks.loop(seconds=30.0)
+    async def giveaway_loop(self):
+        if not self.settings.get_bool("giveaway.enabled", True):
+            return
+        try:
+            await self.giveaway_service.tick()
+        except Exception:
+            pass
+
     @reload_settings_loop.error
     async def reload_settings_loop_error(self, error: Exception):
         await self._emit_bot_error("reload_settings_loop", error, extra=None)
+
+    @ticket_automation_loop.error
+    async def ticket_automation_loop_error(self, error: Exception):
+        await self._emit_bot_error("ticket_automation_loop", error, extra=None)
+
+    @backup_autosave_loop.error
+    async def backup_autosave_loop_error(self, error: Exception):
+        await self._emit_bot_error("backup_autosave_loop", error, extra=None)
+
+    @birthday_loop.error
+    async def birthday_loop_error(self, error: Exception):
+        await self._emit_bot_error("birthday_loop", error, extra=None)
+
+    @giveaway_loop.error
+    async def giveaway_loop_error(self, error: Exception):
+        await self._emit_bot_error("giveaway_loop", error, extra=None)
 
     async def on_ready(self):
         if self._boot_done:
             return
         self._boot_done = True
         await self.forum_logs.start()
+        guild_id = self.settings.get_int("bot.guild_id")
+        if guild_id:
+            guild = self.get_guild(guild_id)
+            if guild and self.user_stats_service:
+                try:
+                    await self.user_stats_service.seed_voice_sessions(guild)
+                except Exception:
+                    pass
+            if guild and self.user_stats_service:
+                try:
+                    await self.user_stats_service.ensure_roles(guild)
+                except Exception:
+                    pass
+            if guild and self.birthday_service:
+                try:
+                    await self.birthday_service.ensure_roles(guild)
+                except Exception:
+                    pass
 
     async def on_error(self, event_method: str, *args, **kwargs):
         import sys

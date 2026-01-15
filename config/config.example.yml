@@ -21,6 +21,27 @@ ticket:
   allow_multiple_open_tickets_per_user: false
   rating_enabled: true
   mirror_staff_attachments: true
+  auto_close_hours: 72
+  sla_first_response_minutes: 60
+  notify_user_on_updates: true
+  log_channel_id: 0
+  escalation_role_id: 0
+  status_labels:
+    - "offen"
+    - "wartet_auf_user"
+    - "in_arbeit"
+    - "on_hold"
+    - "eskaliert"
+  snippets:
+    entbannung:
+      title: "Entbannung"
+      body: "Für eine Entbannung brauchen wir bitte deinen Ingame-Namen, die Uhrzeit und den Grund."
+    beschaeftigt:
+      title: "Wir sind beschäftigt"
+      body: "Danke für deine Nachricht! Gerade ist viel los. Wir melden uns so schnell wie möglich."
+    dokumentation:
+      title: "Dokumentation ansehen"
+      body: "Bitte schau zuerst in die Dokumentation. Viele Fragen sind dort bereits beantwortet."
 
 design:
   accent_color: "#B16B91"
@@ -66,3 +87,282 @@ logging:
   to_discord: true
   to_file: true
   file_path: "data/logs.jsonl"
+
+applications:
+  enabled: true
+  forum_channel_id: 0
+  ping_role_id: 0
+  questions:
+    - "Warum möchtest du dich bewerben?"
+    - "Wie viel Erfahrung hast du?"
+    - "Wie alt bist du?"
+    - "Was sind deine Stärken?"
+    - "Wann hast du Zeit?"
+
+user_stats:
+  enabled: true
+  levelup_channel_id: 0
+  levelup_message: "{user} hat Level **{level}** erreicht! ({pct}% bis {next_level}) | Rollen übrig: {roles_remaining}"
+  xp:
+    per_message: 5
+    per_voice_minute: 2
+  level_curve:
+    base: 100
+    exponent: 1.35
+    quick_levels: 15
+    quick_multiplier: 0.6
+  welcome_patterns:
+    - "welcome"
+    - "willkommen"
+    - "herzlich willkommen"
+    - "wb"
+  vanity_status_contains:
+    - "discord.gg/dein-tag"
+  roles:
+    - name: "1 Jahr"
+      role_id: 0
+      type: "days_on_server"
+      threshold: 365
+    - name: "1.000 Nachrichten"
+      role_id: 0
+      type: "messages"
+      threshold: 1000
+    - name: "20 Willkommensgruesse"
+      role_id: 0
+      type: "welcomes"
+      threshold: 20
+    - name: "Vanity Tag"
+      role_id: 0
+      type: "vanity_status"
+      contains: "discord.gg/dein-tag"
+  level_roles:
+    "5": 0
+    "10": 0
+    "15": 0
+    "20": 0
+    "25": 0
+    "30": 0
+    "35": 0
+    "40": 0
+    "45": 0
+    "50": 0
+    "55": 0
+    "60": 0
+    "65": 0
+    "70": 0
+    "75": 0
+    "80": 0
+    "85": 0
+    "90": 0
+    "95": 0
+    "100": 0
+    "105": 0
+    "110": 0
+    "115": 0
+    "120": 0
+    "125": 0
+    "130": 0
+    "135": 0
+    "140": 0
+    "145": 0
+    "150": 0
+  level_role_name_format: "⭐ • LEVEL {level}"
+
+backup:
+  enabled: true
+  auto_save_enabled: false
+  auto_save_interval_hours: 24
+  auto_save_name: "autosave"
+  last_auto_save_at:
+  exclude:
+    roles: false
+    channels: false
+    permissions: false
+    member_roles: false
+    emojis: false
+    stickers: false
+    webhooks: false
+  exclude_role_ids: []
+  exclude_channel_ids: []
+
+birthday:
+  enabled: true
+  channel_id: 0
+  timezone: "UTC"
+  role_id: 0
+  role_name: "🎂 • GEBURTSTAG"
+  under_18_role_name: "🧒 • U18"
+  adult_role_name: "🔞 • 18+"
+  success_role_name: "🏆 • GEBURTSTAG"
+  under_18_role_id: 0
+  adult_role_id: 0
+  success_role_id: 0
+  auto_react_emoji: "❤️"
+  last_announce_date:
+
+achievements:
+  role_name_prefix: "🏆 • "
+  items:
+    - code: "birthday_set"
+      name: "Erfolg: Geburtstag gesetzt"
+      role_id: 0
+      emoji: "🎂"
+      description: "Trage deinen Geburtstag ein."
+      dm_message: "🎉 Du hast einen Erfolg erzielt! Dein Geburtstag ist jetzt gespeichert."
+      type: "birthday_set"
+    - code: "msg_100"
+      name: "Erfolg: 100 Nachrichten"
+      type: "messages"
+      threshold: 100
+      role_id: 0
+      emoji: "💬"
+      description: "Schreibe 100 Nachrichten im Server."
+      dm_message: "💬 Erfolg! Du hast 100 Nachrichten geschrieben."
+    - code: "msg_500"
+      name: "Erfolg: 500 Nachrichten"
+      type: "messages"
+      threshold: 500
+      role_id: 0
+      emoji: "💬"
+      description: "Schreibe 500 Nachrichten im Server."
+      dm_message: "💬 Erfolg! Du hast 500 Nachrichten geschrieben."
+    - code: "msg_1000"
+      name: "Erfolg: 1.000 Nachrichten"
+      type: "messages"
+      threshold: 1000
+      role_id: 0
+      emoji: "💬"
+      description: "Schreibe 1.000 Nachrichten im Server."
+      dm_message: "💬 Erfolg! Du hast 1.000 Nachrichten geschrieben."
+    - code: "msg_5000"
+      name: "Erfolg: 5.000 Nachrichten"
+      type: "messages"
+      threshold: 5000
+      role_id: 0
+      emoji: "💬"
+      description: "Schreibe 5.000 Nachrichten im Server."
+      dm_message: "💬 Erfolg! Du hast 5.000 Nachrichten geschrieben."
+    - code: "welcome_15"
+      name: "Erfolg: 15 Begruessungen"
+      type: "welcomes"
+      threshold: 15
+      role_id: 0
+      emoji: "👋"
+      description: "Begrüße 15 neue Member."
+      dm_message: "👋 Erfolg! Du hast 15 Leute willkommen geheißen."
+    - code: "welcome_30"
+      name: "Erfolg: 30 Begruessungen"
+      type: "welcomes"
+      threshold: 30
+      role_id: 0
+      emoji: "👋"
+      description: "Begrüße 30 neue Member."
+      dm_message: "👋 Erfolg! Du hast 30 Leute willkommen geheißen."
+    - code: "voice_10h"
+      name: "Erfolg: 10h Voice"
+      type: "voice_hours"
+      threshold: 10
+      role_id: 0
+      emoji: "🎙️"
+      description: "Verbringe 10 Stunden im Voice."
+      dm_message: "🎙️ Erfolg! 10 Stunden im Voice erreicht."
+    - code: "voice_50h"
+      name: "Erfolg: 50h Voice"
+      type: "voice_hours"
+      threshold: 50
+      role_id: 0
+      emoji: "🎙️"
+      description: "Verbringe 50 Stunden im Voice."
+      dm_message: "🎙️ Erfolg! 50 Stunden im Voice erreicht."
+    - code: "voice_100h"
+      name: "Erfolg: 100h Voice"
+      type: "voice_hours"
+      threshold: 100
+      role_id: 0
+      emoji: "🎙️"
+      description: "Verbringe 100 Stunden im Voice."
+      dm_message: "🎙️ Erfolg! 100 Stunden im Voice erreicht."
+    - code: "welcome_20"
+      name: "Erfolg: 20 Begruessungen"
+      type: "welcomes"
+      threshold: 20
+      role_id: 0
+      emoji: "👋"
+      description: "Begrüße 20 neue Member."
+      dm_message: "👋 Erfolg! Du hast 20 Leute willkommen geheißen."
+    - code: "level_5"
+      name: "Erfolg: Level 5"
+      type: "level"
+      threshold: 5
+      role_id: 0
+      emoji: "⭐"
+      description: "Erreiche Level 5."
+      dm_message: "⭐ Erfolg! Level 5 erreicht."
+    - code: "level_10"
+      name: "Erfolg: Level 10"
+      type: "level"
+      threshold: 10
+      role_id: 0
+      emoji: "⭐"
+      description: "Erreiche Level 10."
+      dm_message: "⭐ Erfolg! Level 10 erreicht."
+    - code: "level_25"
+      name: "Erfolg: Level 25"
+      type: "level"
+      threshold: 25
+      role_id: 0
+      emoji: "⭐"
+      description: "Erreiche Level 25."
+      dm_message: "⭐ Erfolg! Level 25 erreicht."
+    - code: "member_30d"
+      name: "Erfolg: 30 Tage Member"
+      type: "days_on_server"
+      threshold: 30
+      role_id: 0
+      emoji: "🗓️"
+      description: "Sei 30 Tage auf dem Server."
+      dm_message: "🗓️ Erfolg! 30 Tage auf dem Server."
+    - code: "member_180d"
+      name: "Erfolg: 180 Tage Member"
+      type: "days_on_server"
+      threshold: 180
+      role_id: 0
+      emoji: "🗓️"
+      description: "Sei 180 Tage auf dem Server."
+      dm_message: "🗓️ Erfolg! 180 Tage auf dem Server."
+    - code: "member_1y"
+      name: "Erfolg: 1 Jahr Member"
+      type: "days_on_server"
+      threshold: 365
+      role_id: 0
+      emoji: "🗓️"
+      description: "Sei 1 Jahr auf dem Server."
+      dm_message: "🗓️ Erfolg! 1 Jahr auf dem Server."
+    - code: "booster"
+      name: "Erfolg: Server Booster"
+      type: "booster"
+      threshold: 1
+      role_id: 0
+      emoji: "🚀"
+      description: "Booste den Server."
+      dm_message: "🚀 Danke fürs Boosten! Erfolg freigeschaltet."
+
+roles:
+  announce_channel_id: 0
+
+giveaway:
+  enabled: true
+  join_emoji: "🎉"
+
+poll:
+  enabled: true
+
+tempvoice:
+  enabled: true
+  join_channel_id: 0
+  category_id: 0
+  name_format: "{user} - Temp"
+  user_limit_default: 0
+  bitrate_default: 64
+  region_default: "auto"
+  auto_delete_empty: true

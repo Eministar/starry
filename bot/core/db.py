@@ -35,6 +35,7 @@ class Database:
             rating_comment TEXT
         );
         """)
+        await self._ensure_ticket_columns()
         await self._conn.execute("""
         CREATE TABLE IF NOT EXISTS ticket_stats (
             user_id INTEGER PRIMARY KEY,
@@ -115,10 +116,196 @@ class Database:
                                  (
                                      guild_id,
                                      key
-                                 )
                                      )
+                                 )
                                  """)
+        await self._conn.execute("""
+        CREATE TABLE IF NOT EXISTS ticket_participants (
+            ticket_id INTEGER NOT NULL,
+            user_id INTEGER NOT NULL,
+            added_by INTEGER,
+            added_at INTEGER NOT NULL,
+            PRIMARY KEY (ticket_id, user_id)
+        );
+        """)
+        await self._conn.execute(
+            "CREATE INDEX IF NOT EXISTS idx_ticket_participants_user ON ticket_participants(user_id)")
+        await self._conn.execute("""
+        CREATE TABLE IF NOT EXISTS backups (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            guild_id INTEGER NOT NULL,
+            name TEXT NOT NULL,
+            payload_json TEXT NOT NULL,
+            created_at TEXT NOT NULL
+        );
+        """)
+        await self._conn.execute(
+            "CREATE INDEX IF NOT EXISTS idx_backups_guild ON backups(guild_id, id)")
+        await self._conn.execute("""
+        CREATE TABLE IF NOT EXISTS birthdays (
+            guild_id INTEGER NOT NULL,
+            user_id INTEGER NOT NULL,
+            day INTEGER NOT NULL,
+            month INTEGER NOT NULL,
+            year INTEGER NOT NULL,
+            created_at TEXT NOT NULL,
+            PRIMARY KEY (guild_id, user_id)
+        );
+        """)
+        await self._conn.execute("""
+        CREATE TABLE IF NOT EXISTS achievements (
+            guild_id INTEGER NOT NULL,
+            user_id INTEGER NOT NULL,
+            code TEXT NOT NULL,
+            unlocked_at TEXT NOT NULL,
+            PRIMARY KEY (guild_id, user_id, code)
+        );
+        """)
+        await self._conn.execute("""
+        CREATE TABLE IF NOT EXISTS guild_configs (
+            guild_id INTEGER NOT NULL,
+            key TEXT NOT NULL,
+            value_json TEXT NOT NULL,
+            updated_at TEXT NOT NULL,
+            PRIMARY KEY (guild_id, key)
+        );
+        """)
+        await self._conn.execute("""
+        CREATE TABLE IF NOT EXISTS giveaways (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            guild_id INTEGER NOT NULL,
+            channel_id INTEGER NOT NULL,
+            message_id INTEGER,
+            title TEXT NOT NULL,
+            sponsor TEXT,
+            description TEXT,
+            end_at TEXT NOT NULL,
+            winner_count INTEGER NOT NULL,
+            conditions_json TEXT NOT NULL,
+            created_by INTEGER NOT NULL,
+            status TEXT NOT NULL,
+            created_at TEXT NOT NULL
+        );
+        """)
+        await self._conn.execute("""
+        CREATE TABLE IF NOT EXISTS giveaway_entries (
+            giveaway_id INTEGER NOT NULL,
+            user_id INTEGER NOT NULL,
+            entered_at TEXT NOT NULL,
+            PRIMARY KEY (giveaway_id, user_id)
+        );
+        """)
+        await self._conn.execute("""
+        CREATE TABLE IF NOT EXISTS polls (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            guild_id INTEGER NOT NULL,
+            channel_id INTEGER NOT NULL,
+            message_id INTEGER,
+            question TEXT NOT NULL,
+            options_json TEXT NOT NULL,
+            created_by INTEGER NOT NULL,
+            status TEXT NOT NULL,
+            created_at TEXT NOT NULL
+        );
+        """)
+        await self._conn.execute("""
+        CREATE TABLE IF NOT EXISTS poll_votes (
+            poll_id INTEGER NOT NULL,
+            user_id INTEGER NOT NULL,
+            option_index INTEGER NOT NULL,
+            voted_at TEXT NOT NULL,
+            PRIMARY KEY (poll_id, user_id)
+        );
+        """)
+        await self._conn.execute("""
+        CREATE TABLE IF NOT EXISTS user_stats (
+            guild_id INTEGER NOT NULL,
+            user_id INTEGER NOT NULL,
+            message_count INTEGER NOT NULL,
+            voice_seconds INTEGER NOT NULL,
+            welcome_count INTEGER NOT NULL,
+            xp INTEGER NOT NULL,
+            level INTEGER NOT NULL,
+            last_message_at TEXT,
+            last_voice_at TEXT,
+            PRIMARY KEY (guild_id, user_id)
+        );
+        """)
+        await self._conn.execute("""
+        CREATE TABLE IF NOT EXISTS user_channel_stats (
+            guild_id INTEGER NOT NULL,
+            user_id INTEGER NOT NULL,
+            channel_id INTEGER NOT NULL,
+            message_count INTEGER NOT NULL,
+            PRIMARY KEY (guild_id, user_id, channel_id)
+        );
+        """)
+        await self._conn.execute("""
+        CREATE TABLE IF NOT EXISTS user_voice_sessions (
+            guild_id INTEGER NOT NULL,
+            user_id INTEGER NOT NULL,
+            channel_id INTEGER NOT NULL,
+            joined_at TEXT NOT NULL,
+            PRIMARY KEY (guild_id, user_id)
+        );
+        """)
+        await self._conn.execute("""
+        CREATE TABLE IF NOT EXISTS tempvoice_rooms (
+            guild_id INTEGER NOT NULL,
+            channel_id INTEGER NOT NULL,
+            owner_id INTEGER NOT NULL,
+            panel_channel_id INTEGER,
+            panel_message_id INTEGER,
+            created_at TEXT NOT NULL,
+            PRIMARY KEY (guild_id, channel_id)
+        );
+        """)
+        await self._conn.execute(
+            "CREATE INDEX IF NOT EXISTS idx_tempvoice_owner ON tempvoice_rooms(guild_id, owner_id)")
+        await self._conn.execute(
+            "CREATE INDEX IF NOT EXISTS idx_user_stats_guild ON user_stats(guild_id)")
+        await self._conn.execute(
+            "CREATE INDEX IF NOT EXISTS idx_user_channel_stats_user ON user_channel_stats(guild_id, user_id)")
+        await self._conn.execute("""
+        CREATE TABLE IF NOT EXISTS applications (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            guild_id INTEGER NOT NULL,
+            user_id INTEGER NOT NULL,
+            thread_id INTEGER NOT NULL,
+            status TEXT NOT NULL,
+            questions_json TEXT NOT NULL,
+            answers_json TEXT NOT NULL,
+            created_at TEXT NOT NULL,
+            closed_at TEXT
+        );
+        """)
+        await self._conn.execute(
+            "CREATE INDEX IF NOT EXISTS idx_applications_user ON applications(guild_id, user_id)")
 
+        await self._conn.commit()
+
+    async def _table_has_column(self, table: str, column: str) -> bool:
+        cur = await self._conn.execute(f"PRAGMA table_info({table});")
+        rows = await cur.fetchall()
+        return any(r and str(r[1]) == column for r in rows)
+
+    async def _ensure_column(self, table: str, column: str, definition: str):
+        if not await self._table_has_column(table, column):
+            await self._conn.execute(
+                f"ALTER TABLE {table} ADD COLUMN {column} {definition};"
+            )
+
+    async def _ensure_ticket_columns(self):
+        await self._ensure_column("tickets", "priority", "INTEGER DEFAULT 2")
+        await self._ensure_column("tickets", "status_label", "TEXT")
+        await self._ensure_column("tickets", "last_activity_at", "TEXT")
+        await self._ensure_column("tickets", "last_user_message_at", "TEXT")
+        await self._ensure_column("tickets", "last_staff_message_at", "TEXT")
+        await self._ensure_column("tickets", "first_staff_reply_at", "TEXT")
+        await self._ensure_column("tickets", "sla_breached_at", "TEXT")
+        await self._ensure_column("tickets", "escalated_level", "INTEGER DEFAULT 0")
+        await self._ensure_column("tickets", "escalated_by", "INTEGER")
+        await self._ensure_column("tickets", "escalated_at", "TEXT")
         await self._conn.commit()
 
     async def now_iso(self) -> str:
@@ -127,9 +314,12 @@ class Database:
     async def create_ticket(self, guild_id: int, user_id: int, forum_channel_id: int, thread_id: int, summary_message_id: int, category_key: str):
         created_at = await self.now_iso()
         await self._conn.execute("""
-        INSERT INTO tickets (guild_id, user_id, forum_channel_id, thread_id, summary_message_id, category_key, status, created_at)
-        VALUES (?, ?, ?, ?, ?, ?, 'open', ?);
-        """, (guild_id, user_id, forum_channel_id, thread_id, summary_message_id, category_key, created_at))
+        INSERT INTO tickets (
+            guild_id, user_id, forum_channel_id, thread_id, summary_message_id,
+            category_key, status, created_at, priority, last_activity_at, last_user_message_at
+        )
+        VALUES (?, ?, ?, ?, ?, ?, 'open', ?, 2, ?, ?);
+        """, (guild_id, user_id, forum_channel_id, thread_id, summary_message_id, category_key, created_at, created_at, created_at))
         await self._conn.execute("""
         INSERT INTO ticket_stats (user_id, total_tickets)
         VALUES (?, 1)
@@ -152,17 +342,32 @@ class Database:
 
     async def get_ticket_by_thread(self, guild_id: int, thread_id: int):
         cur = await self._conn.execute("""
-        SELECT id, user_id, thread_id, summary_message_id, status, claimed_by, category_key
+        SELECT id, user_id, thread_id, summary_message_id, status, claimed_by, category_key,
+               priority, status_label, escalated_level, escalated_by,
+               created_at, closed_at, last_activity_at, last_user_message_at,
+               last_staff_message_at, first_staff_reply_at, sla_breached_at
         FROM tickets
         WHERE guild_id = ? AND thread_id = ?
         LIMIT 1;
         """, (guild_id, thread_id))
         return await cur.fetchone()
 
+    async def get_open_ticket_by_participant(self, guild_id: int, user_id: int):
+        cur = await self._conn.execute("""
+        SELECT t.id, t.thread_id, t.summary_message_id, t.status, t.claimed_by, t.category_key
+        FROM tickets t
+        JOIN ticket_participants p ON p.ticket_id = t.id
+        WHERE t.guild_id = ? AND p.user_id = ? AND t.status IN ('open','claimed')
+        ORDER BY t.id DESC LIMIT 1;
+        """, (guild_id, user_id))
+        row = await cur.fetchone()
+        return row
+
     async def get_ticket(self, ticket_id: int):
         cur = await self._conn.execute("""
         SELECT id, guild_id, user_id, forum_channel_id, thread_id, summary_message_id, category_key, status, claimed_by,
-               created_at, closed_at, rating, rating_comment
+               created_at, closed_at, rating, rating_comment, priority, status_label, escalated_level, escalated_by,
+               last_activity_at, last_user_message_at, last_staff_message_at, first_staff_reply_at, sla_breached_at
         FROM tickets WHERE id = ? LIMIT 1;
         """, (ticket_id,))
         return await cur.fetchone()
@@ -188,6 +393,85 @@ class Database:
         """, (closed_at, ticket_id))
         await self._conn.commit()
 
+    async def reopen_ticket(self, ticket_id: int):
+        await self._conn.execute("""
+        UPDATE tickets SET status = 'open', closed_at = NULL
+        WHERE id = ?;
+        """, (ticket_id,))
+        await self._conn.commit()
+
+    async def set_status_label(self, ticket_id: int, status_label: str | None):
+        await self._conn.execute("""
+        UPDATE tickets SET status_label = ?
+        WHERE id = ?;
+        """, (status_label, ticket_id))
+        await self._conn.commit()
+
+    async def set_priority(self, ticket_id: int, priority: int):
+        await self._conn.execute("""
+        UPDATE tickets SET priority = ?
+        WHERE id = ?;
+        """, (priority, ticket_id))
+        await self._conn.commit()
+
+    async def set_category_key(self, ticket_id: int, category_key: str):
+        await self._conn.execute("""
+        UPDATE tickets SET category_key = ?
+        WHERE id = ?;
+        """, (category_key, ticket_id))
+        await self._conn.commit()
+
+    async def set_escalation(self, ticket_id: int, level: int, actor_id: int | None):
+        now = await self.now_iso()
+        await self._conn.execute("""
+        UPDATE tickets SET escalated_level = ?, escalated_by = ?, escalated_at = ?
+        WHERE id = ?;
+        """, (level, actor_id, now, ticket_id))
+        await self._conn.commit()
+
+    async def set_last_activity(self, ticket_id: int, when_iso: str):
+        await self._conn.execute("""
+        UPDATE tickets SET last_activity_at = ?
+        WHERE id = ?;
+        """, (when_iso, ticket_id))
+        await self._conn.commit()
+
+    async def set_last_user_message(self, ticket_id: int, when_iso: str):
+        await self._conn.execute("""
+        UPDATE tickets SET last_user_message_at = ?, last_activity_at = ?
+        WHERE id = ?;
+        """, (when_iso, when_iso, ticket_id))
+        await self._conn.commit()
+
+    async def set_last_staff_message(self, ticket_id: int, when_iso: str):
+        await self._conn.execute("""
+        UPDATE tickets
+        SET last_staff_message_at = ?, last_activity_at = ?,
+            first_staff_reply_at = COALESCE(first_staff_reply_at, ?)
+        WHERE id = ?;
+        """, (when_iso, when_iso, when_iso, ticket_id))
+        await self._conn.commit()
+
+    async def set_sla_breached(self, ticket_id: int, when_iso: str):
+        await self._conn.execute("""
+        UPDATE tickets SET sla_breached_at = ?
+        WHERE id = ?;
+        """, (when_iso, ticket_id))
+        await self._conn.commit()
+
+    async def list_active_tickets(self, limit: int = 500):
+        cur = await self._conn.execute("""
+        SELECT id, guild_id, user_id, thread_id, status, claimed_by, category_key,
+               created_at, last_activity_at, last_user_message_at, last_staff_message_at,
+               first_staff_reply_at, sla_breached_at, priority, status_label, escalated_level
+        FROM tickets
+        WHERE status IN ('open','claimed')
+        ORDER BY id DESC
+        LIMIT ?;
+        """, (limit,))
+        rows = await cur.fetchall()
+        return rows
+
     async def set_rating(self, ticket_id: int, rating: int, comment: str | None):
         await self._conn.execute("""
         UPDATE tickets SET rating = ?, rating_comment = ?
@@ -200,6 +484,120 @@ class Database:
         row = await cur.fetchone()
         return int(row[0]) if row else 0
 
+    async def upsert_user_stats(self, guild_id: int, user_id: int):
+        await self._conn.execute("""
+        INSERT OR IGNORE INTO user_stats (
+            guild_id, user_id, message_count, voice_seconds, welcome_count, xp, level
+        ) VALUES (?, ?, 0, 0, 0, 0, 0);
+        """, (int(guild_id), int(user_id)))
+        await self._conn.commit()
+
+    async def increment_message(self, guild_id: int, user_id: int, channel_id: int, xp_delta: int):
+        now = await self.now_iso()
+        await self._conn.execute("""
+        INSERT INTO user_stats (guild_id, user_id, message_count, voice_seconds, welcome_count, xp, level, last_message_at)
+        VALUES (?, ?, 1, 0, 0, ?, 0, ?)
+        ON CONFLICT(guild_id, user_id) DO UPDATE SET
+            message_count = message_count + 1,
+            xp = xp + excluded.xp,
+            last_message_at = excluded.last_message_at;
+        """, (int(guild_id), int(user_id), int(xp_delta), now))
+        await self._conn.execute("""
+        INSERT INTO user_channel_stats (guild_id, user_id, channel_id, message_count)
+        VALUES (?, ?, ?, 1)
+        ON CONFLICT(guild_id, user_id, channel_id) DO UPDATE SET
+            message_count = message_count + 1;
+        """, (int(guild_id), int(user_id), int(channel_id)))
+        await self._conn.commit()
+
+    async def increment_welcome(self, guild_id: int, user_id: int):
+        await self._conn.execute("""
+        INSERT INTO user_stats (guild_id, user_id, message_count, voice_seconds, welcome_count, xp, level)
+        VALUES (?, ?, 0, 0, 1, 0, 0)
+        ON CONFLICT(guild_id, user_id) DO UPDATE SET
+            welcome_count = welcome_count + 1;
+        """, (int(guild_id), int(user_id)))
+        await self._conn.commit()
+
+    async def add_voice_seconds(self, guild_id: int, user_id: int, seconds: int, xp_delta: int):
+        now = await self.now_iso()
+        await self._conn.execute("""
+        INSERT INTO user_stats (guild_id, user_id, message_count, voice_seconds, welcome_count, xp, level, last_voice_at)
+        VALUES (?, ?, 0, ?, 0, ?, 0, ?)
+        ON CONFLICT(guild_id, user_id) DO UPDATE SET
+            voice_seconds = voice_seconds + excluded.voice_seconds,
+            xp = xp + excluded.xp,
+            last_voice_at = excluded.last_voice_at;
+        """, (int(guild_id), int(user_id), int(seconds), int(xp_delta), now))
+        await self._conn.commit()
+
+    async def get_user_stats(self, guild_id: int, user_id: int):
+        cur = await self._conn.execute("""
+        SELECT guild_id, user_id, message_count, voice_seconds, welcome_count, xp, level, last_message_at, last_voice_at
+        FROM user_stats WHERE guild_id = ? AND user_id = ? LIMIT 1;
+        """, (int(guild_id), int(user_id)))
+        return await cur.fetchone()
+
+    async def set_user_level(self, guild_id: int, user_id: int, level: int):
+        await self._conn.execute("""
+        UPDATE user_stats SET level = ? WHERE guild_id = ? AND user_id = ?;
+        """, (int(level), int(guild_id), int(user_id)))
+        await self._conn.commit()
+
+    async def list_user_channel_stats(self, guild_id: int, user_id: int, limit: int = 10):
+        cur = await self._conn.execute("""
+        SELECT channel_id, message_count
+        FROM user_channel_stats
+        WHERE guild_id = ? AND user_id = ?
+        ORDER BY message_count DESC
+        LIMIT ?;
+        """, (int(guild_id), int(user_id), int(limit)))
+        return await cur.fetchall()
+
+    async def count_users_with_messages_at_least(self, guild_id: int, count: int):
+        cur = await self._conn.execute("""
+        SELECT COUNT(*) FROM user_stats WHERE guild_id = ? AND message_count >= ?;
+        """, (int(guild_id), int(count)))
+        row = await cur.fetchone()
+        return int(row[0] if row else 0)
+
+    async def count_users_with_voice_at_least(self, guild_id: int, seconds: int):
+        cur = await self._conn.execute("""
+        SELECT COUNT(*) FROM user_stats WHERE guild_id = ? AND voice_seconds >= ?;
+        """, (int(guild_id), int(seconds)))
+        row = await cur.fetchone()
+        return int(row[0] if row else 0)
+
+    async def count_users_in_stats(self, guild_id: int):
+        cur = await self._conn.execute("""
+        SELECT COUNT(*) FROM user_stats WHERE guild_id = ?;
+        """, (int(guild_id),))
+        row = await cur.fetchone()
+        return int(row[0] if row else 0)
+
+    async def get_voice_session(self, guild_id: int, user_id: int):
+        cur = await self._conn.execute("""
+        SELECT channel_id, joined_at FROM user_voice_sessions
+        WHERE guild_id = ? AND user_id = ? LIMIT 1;
+        """, (int(guild_id), int(user_id)))
+        return await cur.fetchone()
+
+    async def set_voice_session(self, guild_id: int, user_id: int, channel_id: int, joined_at: str):
+        await self._conn.execute("""
+        INSERT INTO user_voice_sessions (guild_id, user_id, channel_id, joined_at)
+        VALUES (?, ?, ?, ?)
+        ON CONFLICT(guild_id, user_id) DO UPDATE SET
+            channel_id = excluded.channel_id,
+            joined_at = excluded.joined_at;
+        """, (int(guild_id), int(user_id), int(channel_id), str(joined_at)))
+        await self._conn.commit()
+
+    async def clear_voice_session(self, guild_id: int, user_id: int):
+        await self._conn.execute("""
+        DELETE FROM user_voice_sessions WHERE guild_id = ? AND user_id = ?;
+        """, (int(guild_id), int(user_id)))
+        await self._conn.commit()
+
     async def list_tickets(self, limit: int = 200):
         cur = await self._conn.execute("""
         SELECT id, user_id, thread_id, status, claimed_by, created_at, closed_at, rating
@@ -209,6 +607,306 @@ class Database:
         """, (limit,))
         rows = await cur.fetchall()
         return rows
+
+    async def list_logs(self, limit: int = 200):
+        cur = await self._conn.execute("""
+        SELECT id, event, payload, created_at
+        FROM logs
+        ORDER BY id DESC
+        LIMIT ?;
+        """, (limit,))
+        rows = await cur.fetchall()
+        return rows
+
+    async def create_backup(self, guild_id: int, name: str, payload_json: str):
+        created_at = await self.now_iso()
+        await self._conn.execute("""
+        INSERT INTO backups (guild_id, name, payload_json, created_at)
+        VALUES (?, ?, ?, ?);
+        """, (int(guild_id), str(name), str(payload_json), created_at))
+        await self._conn.commit()
+        cur = await self._conn.execute("SELECT last_insert_rowid();")
+        row = await cur.fetchone()
+        return int(row[0])
+
+    async def list_backups(self, guild_id: int, limit: int = 50):
+        cur = await self._conn.execute("""
+        SELECT id, name, created_at
+        FROM backups
+        WHERE guild_id = ?
+        ORDER BY id DESC
+        LIMIT ?;
+        """, (int(guild_id), int(limit)))
+        rows = await cur.fetchall()
+        return rows
+
+    async def get_backup(self, guild_id: int, backup_id: int):
+        cur = await self._conn.execute("""
+        SELECT id, name, payload_json, created_at
+        FROM backups
+        WHERE guild_id = ? AND id = ?
+        LIMIT 1;
+        """, (int(guild_id), int(backup_id)))
+        return await cur.fetchone()
+
+    async def get_backup_by_name(self, guild_id: int, name: str):
+        cur = await self._conn.execute("""
+        SELECT id, name, payload_json, created_at
+        FROM backups
+        WHERE guild_id = ? AND name = ?
+        ORDER BY id DESC
+        LIMIT 1;
+        """, (int(guild_id), str(name)))
+        return await cur.fetchone()
+
+    async def get_latest_backup(self, guild_id: int):
+        cur = await self._conn.execute("""
+        SELECT id, name, payload_json, created_at
+        FROM backups
+        WHERE guild_id = ?
+        ORDER BY id DESC
+        LIMIT 1;
+        """, (int(guild_id),))
+        return await cur.fetchone()
+
+    async def set_birthday(self, guild_id: int, user_id: int, day: int, month: int, year: int):
+        created_at = await self.now_iso()
+        await self._conn.execute("""
+        INSERT INTO birthdays (guild_id, user_id, day, month, year, created_at)
+        VALUES (?, ?, ?, ?, ?, ?)
+        ON CONFLICT(guild_id, user_id) DO UPDATE SET
+            day = excluded.day,
+            month = excluded.month,
+            year = excluded.year;
+        """, (int(guild_id), int(user_id), int(day), int(month), int(year), created_at))
+        await self._conn.commit()
+
+    async def remove_birthday(self, guild_id: int, user_id: int):
+        await self._conn.execute("""
+        DELETE FROM birthdays WHERE guild_id = ? AND user_id = ?;
+        """, (int(guild_id), int(user_id)))
+        await self._conn.commit()
+
+    async def get_birthday(self, guild_id: int, user_id: int):
+        cur = await self._conn.execute("""
+        SELECT day, month, year FROM birthdays WHERE guild_id = ? AND user_id = ? LIMIT 1;
+        """, (int(guild_id), int(user_id)))
+        return await cur.fetchone()
+
+    async def list_birthdays_for_day(self, guild_id: int, day: int, month: int):
+        cur = await self._conn.execute("""
+        SELECT user_id, day, month, year
+        FROM birthdays
+        WHERE guild_id = ? AND day = ? AND month = ?;
+        """, (int(guild_id), int(day), int(month)))
+        return await cur.fetchall()
+
+    async def list_birthdays(self, guild_id: int, limit: int = 20, offset: int = 0):
+        cur = await self._conn.execute("""
+        SELECT user_id, day, month, year
+        FROM birthdays
+        WHERE guild_id = ?
+        ORDER BY month ASC, day ASC
+        LIMIT ? OFFSET ?;
+        """, (int(guild_id), int(limit), int(offset)))
+        return await cur.fetchall()
+
+    async def count_birthdays(self, guild_id: int):
+        cur = await self._conn.execute("""
+        SELECT COUNT(*) FROM birthdays WHERE guild_id = ?;
+        """, (int(guild_id),))
+        row = await cur.fetchone()
+        return int(row[0] if row else 0)
+
+    async def add_achievement(self, guild_id: int, user_id: int, code: str):
+        unlocked_at = await self.now_iso()
+        await self._conn.execute("""
+        INSERT OR IGNORE INTO achievements (guild_id, user_id, code, unlocked_at)
+        VALUES (?, ?, ?, ?);
+        """, (int(guild_id), int(user_id), str(code), unlocked_at))
+        await self._conn.commit()
+
+    async def list_achievements(self, guild_id: int, user_id: int):
+        cur = await self._conn.execute("""
+        SELECT code, unlocked_at FROM achievements WHERE guild_id = ? AND user_id = ?;
+        """, (int(guild_id), int(user_id)))
+        return await cur.fetchall()
+
+    async def set_guild_config(self, guild_id: int, key: str, value_json: str):
+        updated_at = await self.now_iso()
+        await self._conn.execute("""
+        INSERT INTO guild_configs (guild_id, key, value_json, updated_at)
+        VALUES (?, ?, ?, ?)
+        ON CONFLICT(guild_id, key) DO UPDATE SET
+            value_json = excluded.value_json,
+            updated_at = excluded.updated_at;
+        """, (int(guild_id), str(key), str(value_json), updated_at))
+        await self._conn.commit()
+
+    async def get_guild_config(self, guild_id: int, key: str):
+        cur = await self._conn.execute("""
+        SELECT value_json FROM guild_configs WHERE guild_id = ? AND key = ? LIMIT 1;
+        """, (int(guild_id), str(key)))
+        row = await cur.fetchone()
+        return row[0] if row else None
+
+    async def count_achievement(self, guild_id: int, code: str):
+        cur = await self._conn.execute("""
+        SELECT COUNT(*) FROM achievements WHERE guild_id = ? AND code = ?;
+        """, (int(guild_id), str(code)))
+        row = await cur.fetchone()
+        return int(row[0] if row else 0)
+
+    async def create_giveaway(self, guild_id: int, channel_id: int, title: str, sponsor: str | None,
+                              description: str | None, end_at: str, winner_count: int,
+                              conditions_json: str, created_by: int):
+        created_at = await self.now_iso()
+        await self._conn.execute("""
+        INSERT INTO giveaways (
+            guild_id, channel_id, title, sponsor, description, end_at,
+            winner_count, conditions_json, created_by, status, created_at
+        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, 'open', ?);
+        """, (int(guild_id), int(channel_id), str(title), sponsor, description, str(end_at),
+              int(winner_count), str(conditions_json), int(created_by), created_at))
+        await self._conn.commit()
+        cur = await self._conn.execute("SELECT last_insert_rowid();")
+        row = await cur.fetchone()
+        return int(row[0])
+
+    async def set_giveaway_message(self, giveaway_id: int, message_id: int):
+        await self._conn.execute("""
+        UPDATE giveaways SET message_id = ? WHERE id = ?;
+        """, (int(message_id), int(giveaway_id)))
+        await self._conn.commit()
+
+    async def get_giveaway(self, giveaway_id: int):
+        cur = await self._conn.execute("""
+        SELECT id, guild_id, channel_id, message_id, title, sponsor, description, end_at,
+               winner_count, conditions_json, created_by, status, created_at
+        FROM giveaways WHERE id = ? LIMIT 1;
+        """, (int(giveaway_id),))
+        return await cur.fetchone()
+
+    async def get_giveaway_by_message(self, guild_id: int, message_id: int):
+        cur = await self._conn.execute("""
+        SELECT id, guild_id, channel_id, message_id, title, sponsor, description, end_at,
+               winner_count, conditions_json, created_by, status, created_at
+        FROM giveaways
+        WHERE guild_id = ? AND message_id = ? LIMIT 1;
+        """, (int(guild_id), int(message_id)))
+        return await cur.fetchone()
+
+    async def list_open_giveaways(self, guild_id: int):
+        cur = await self._conn.execute("""
+        SELECT id, channel_id, message_id, end_at
+        FROM giveaways
+        WHERE guild_id = ? AND status = 'open';
+        """, (int(guild_id),))
+        return await cur.fetchall()
+
+    async def close_giveaway(self, giveaway_id: int):
+        await self._conn.execute("""
+        UPDATE giveaways SET status = 'closed' WHERE id = ?;
+        """, (int(giveaway_id),))
+        await self._conn.commit()
+
+    async def add_giveaway_entry(self, giveaway_id: int, user_id: int):
+        entered_at = await self.now_iso()
+        await self._conn.execute("""
+        INSERT OR IGNORE INTO giveaway_entries (giveaway_id, user_id, entered_at)
+        VALUES (?, ?, ?);
+        """, (int(giveaway_id), int(user_id), entered_at))
+        await self._conn.commit()
+
+    async def count_giveaway_entries(self, giveaway_id: int):
+        cur = await self._conn.execute("""
+        SELECT COUNT(*) FROM giveaway_entries WHERE giveaway_id = ?;
+        """, (int(giveaway_id),))
+        row = await cur.fetchone()
+        return int(row[0] if row else 0)
+
+    async def list_giveaway_entries(self, giveaway_id: int):
+        cur = await self._conn.execute("""
+        SELECT user_id FROM giveaway_entries WHERE giveaway_id = ?;
+        """, (int(giveaway_id),))
+        rows = await cur.fetchall()
+        return [int(r[0]) for r in rows if r and r[0] is not None]
+
+    async def create_poll(self, guild_id: int, channel_id: int, question: str, options_json: str, created_by: int):
+        created_at = await self.now_iso()
+        await self._conn.execute("""
+        INSERT INTO polls (guild_id, channel_id, question, options_json, created_by, status, created_at)
+        VALUES (?, ?, ?, ?, ?, 'open', ?);
+        """, (int(guild_id), int(channel_id), str(question), str(options_json), int(created_by), created_at))
+        await self._conn.commit()
+        cur = await self._conn.execute("SELECT last_insert_rowid();")
+        row = await cur.fetchone()
+        return int(row[0])
+
+    async def set_poll_message(self, poll_id: int, message_id: int):
+        await self._conn.execute("""
+        UPDATE polls SET message_id = ? WHERE id = ?;
+        """, (int(message_id), int(poll_id)))
+        await self._conn.commit()
+
+    async def get_poll(self, poll_id: int):
+        cur = await self._conn.execute("""
+        SELECT id, guild_id, channel_id, message_id, question, options_json, created_by, status, created_at
+        FROM polls WHERE id = ? LIMIT 1;
+        """, (int(poll_id),))
+        return await cur.fetchone()
+
+    async def add_poll_vote(self, poll_id: int, user_id: int, option_index: int):
+        voted_at = await self.now_iso()
+        await self._conn.execute("""
+        INSERT OR REPLACE INTO poll_votes (poll_id, user_id, option_index, voted_at)
+        VALUES (?, ?, ?, ?);
+        """, (int(poll_id), int(user_id), int(option_index), voted_at))
+        await self._conn.commit()
+
+    async def list_poll_votes(self, poll_id: int):
+        cur = await self._conn.execute("""
+        SELECT option_index FROM poll_votes WHERE poll_id = ?;
+        """, (int(poll_id),))
+        rows = await cur.fetchall()
+        return [int(r[0]) for r in rows if r and r[0] is not None]
+
+    async def create_application(self, guild_id: int, user_id: int, thread_id: int, questions: list[str], answers: list[str]):
+        created_at = await self.now_iso()
+        await self._conn.execute("""
+        INSERT INTO applications (guild_id, user_id, thread_id, status, questions_json, answers_json, created_at)
+        VALUES (?, ?, ?, 'open', ?, ?, ?);
+        """, (int(guild_id), int(user_id), int(thread_id), json.dumps(questions, ensure_ascii=False),
+              json.dumps(answers, ensure_ascii=False), created_at))
+        await self._conn.commit()
+        cur = await self._conn.execute("SELECT last_insert_rowid();")
+        row = await cur.fetchone()
+        return int(row[0])
+
+    async def list_applications(self, limit: int = 200):
+        cur = await self._conn.execute("""
+        SELECT id, user_id, thread_id, status, created_at, closed_at
+        FROM applications
+        ORDER BY id DESC
+        LIMIT ?;
+        """, (limit,))
+        rows = await cur.fetchall()
+        return rows
+
+    async def count_tickets_by_status(self) -> dict:
+        cur = await self._conn.execute("""
+        SELECT status, COUNT(*) FROM tickets GROUP BY status;
+        """)
+        rows = await cur.fetchall()
+        out = {"open": 0, "claimed": 0, "closed": 0}
+        for r in rows:
+            if not r:
+                continue
+            status = str(r[0])
+            count = int(r[1]) if r[1] is not None else 0
+            out[status] = count
+        out["total"] = int(out.get("open", 0) + out.get("claimed", 0) + out.get("closed", 0))
+        return out
 
     async def log_event(self, event: str, payload: dict):
         created_at = await self.now_iso()
@@ -239,6 +937,22 @@ class Database:
         row = await cur.fetchone()
         return int(row[0] if row else 0)
 
+    async def list_infractions(self, guild_id: int, user_id: int, limit: int = 10):
+        cur = await self._conn.execute(
+            "SELECT id, action, duration_seconds, reason, created_at, moderator_id "
+            "FROM infractions WHERE guild_id=? AND user_id=? ORDER BY created_at DESC LIMIT ?",
+            (int(guild_id), int(user_id), int(limit))
+        )
+        return await cur.fetchall()
+
+    async def get_infraction(self, guild_id: int, case_id: int):
+        cur = await self._conn.execute(
+            "SELECT id, action, duration_seconds, reason, created_at, moderator_id, user_id "
+            "FROM infractions WHERE guild_id=? AND id=? LIMIT 1",
+            (int(guild_id), int(case_id))
+        )
+        return await cur.fetchone()
+
     async def get_log_thread(self, guild_id: int, key: str) -> int | None:
         cur = await self._conn.execute(
             "SELECT thread_id FROM log_threads WHERE guild_id=? AND key=?",
@@ -253,5 +967,122 @@ class Database:
             "INSERT INTO log_threads(guild_id,forum_id,key,thread_id,created_at) VALUES(?,?,?,?,?) "
             "ON CONFLICT(guild_id,key) DO UPDATE SET forum_id=excluded.forum_id, thread_id=excluded.thread_id",
             (int(guild_id), int(forum_id), str(key), int(thread_id), now)
+        )
+        await self._conn.commit()
+
+    async def add_ticket_participant(self, ticket_id: int, user_id: int, added_by: int | None = None) -> None:
+        now = int(time.time())
+        await self._conn.execute(
+            "INSERT OR IGNORE INTO ticket_participants(ticket_id,user_id,added_by,added_at) VALUES(?,?,?,?)",
+            (int(ticket_id), int(user_id), int(added_by) if added_by else None, now)
+        )
+        await self._conn.commit()
+
+    async def list_ticket_participants(self, ticket_id: int) -> list[int]:      
+        cur = await self._conn.execute(
+            "SELECT user_id FROM ticket_participants WHERE ticket_id = ? ORDER BY user_id ASC",
+            (int(ticket_id),)
+        )
+        rows = await cur.fetchall()
+        return [int(r[0]) for r in rows if r and r[0] is not None]
+
+    async def create_tempvoice_room(
+        self,
+        guild_id: int,
+        channel_id: int,
+        owner_id: int,
+        panel_channel_id: int | None,
+        panel_message_id: int | None,
+    ):
+        created_at = await self.now_iso()
+        await self._conn.execute(
+            """
+            INSERT OR REPLACE INTO tempvoice_rooms
+            (guild_id, channel_id, owner_id, panel_channel_id, panel_message_id, created_at)
+            VALUES (?, ?, ?, ?, ?, ?);
+            """,
+            (
+                int(guild_id),
+                int(channel_id),
+                int(owner_id),
+                int(panel_channel_id) if panel_channel_id else None,
+                int(panel_message_id) if panel_message_id else None,
+                created_at,
+            ),
+        )
+        await self._conn.commit()
+
+    async def get_tempvoice_room_by_channel(self, guild_id: int, channel_id: int):
+        cur = await self._conn.execute(
+            """
+            SELECT guild_id, channel_id, owner_id, panel_channel_id, panel_message_id, created_at
+            FROM tempvoice_rooms
+            WHERE guild_id = ? AND channel_id = ?;
+            """,
+            (int(guild_id), int(channel_id)),
+        )
+        return await cur.fetchone()
+
+    async def get_tempvoice_room_by_owner(self, guild_id: int, owner_id: int):
+        cur = await self._conn.execute(
+            """
+            SELECT guild_id, channel_id, owner_id, panel_channel_id, panel_message_id, created_at
+            FROM tempvoice_rooms
+            WHERE guild_id = ? AND owner_id = ?
+            ORDER BY created_at DESC
+            LIMIT 1;
+            """,
+            (int(guild_id), int(owner_id)),
+        )
+        return await cur.fetchone()
+
+    async def list_tempvoice_rooms(self, guild_id: int):
+        cur = await self._conn.execute(
+            """
+            SELECT guild_id, channel_id, owner_id, panel_channel_id, panel_message_id, created_at
+            FROM tempvoice_rooms
+            WHERE guild_id = ?;
+            """,
+            (int(guild_id),),
+        )
+        return await cur.fetchall()
+
+    async def set_tempvoice_owner(self, guild_id: int, channel_id: int, owner_id: int):
+        await self._conn.execute(
+            """
+            UPDATE tempvoice_rooms
+            SET owner_id = ?
+            WHERE guild_id = ? AND channel_id = ?;
+            """,
+            (int(owner_id), int(guild_id), int(channel_id)),
+        )
+        await self._conn.commit()
+
+    async def set_tempvoice_panel_message(
+        self,
+        guild_id: int,
+        channel_id: int,
+        panel_channel_id: int | None,
+        panel_message_id: int | None,
+    ):
+        await self._conn.execute(
+            """
+            UPDATE tempvoice_rooms
+            SET panel_channel_id = ?, panel_message_id = ?
+            WHERE guild_id = ? AND channel_id = ?;
+            """,
+            (
+                int(panel_channel_id) if panel_channel_id else None,
+                int(panel_message_id) if panel_message_id else None,
+                int(guild_id),
+                int(channel_id),
+            ),
+        )
+        await self._conn.commit()
+
+    async def delete_tempvoice_room(self, guild_id: int, channel_id: int):
+        await self._conn.execute(
+            "DELETE FROM tempvoice_rooms WHERE guild_id = ? AND channel_id = ?;",
+            (int(guild_id), int(channel_id)),
         )
         await self._conn.commit()

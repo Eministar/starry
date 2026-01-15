@@ -32,6 +32,9 @@ def build_summary_embed(
     category_label: str,
     created_at: datetime,
     total_tickets: int,
+    priority: int | None = None,
+    status_label: str | None = None,
+    escalated_level: int | None = None,
 ):
     book = em(settings, "book", guild)
     arrow2 = em(settings, "arrow2", guild)
@@ -45,8 +48,11 @@ def build_summary_embed(
         f"┣`🏆` - Server beigetreten: {joined}\n"
         f"┗`📬` - Hat bereits {total_tickets} Tickets erstellt.\n\n"
         f"┏`📚` - Ticket-Thema: {category_label}\n"
+        f"┣`🚦` - Priorität: { _priority_label(priority) }\n"
+        f"┣`🏷️` - Status: {status_label if status_label else 'offen'}\n"
+        f"┣`⚠️` - Eskalation: {int(escalated_level) if escalated_level else 0}\n"
         f"┗`⏰` - Ticket erstellt: {format_dt(created_at, style='f')}\n\n"
-        f"Übernimm das Ticket mit /ticket beanspruchen oder schreibe etwas hinein!"
+        "Nutze die Buttons unten für Claim, Status, Priorität, Eskalation oder Transcript."
     )
 
     emb = discord.Embed(
@@ -57,6 +63,19 @@ def build_summary_embed(
     emb.set_thumbnail(url=user.display_avatar.url)
     _footer(emb, settings)
     return emb
+
+
+def _priority_label(priority: int | None) -> str:
+    mapping = {
+        1: "Niedrig",
+        2: "Normal",
+        3: "Hoch",
+        4: "Dringend",
+    }
+    try:
+        return mapping.get(int(priority or 2), "Normal")
+    except Exception:
+        return "Normal"
 
 
 def build_user_message_embed(settings, guild: discord.Guild | None, user: discord.User, content: str):
@@ -169,6 +188,24 @@ def build_dm_rating_thanks_embed(settings, guild: discord.Guild | None, rating: 
     return emb
 
 
+def build_dm_ticket_added_embed(settings, guild: discord.Guild | None, ticket_id: int, added_by: discord.Member):
+    info = em(settings, "info", guild)
+    arrow2 = em(settings, "arrow2", guild)
+    desc = (
+        f"{arrow2} Du wurdest zu einem Ticket hinzugefügt.\n\n"
+        f"• Ticket-ID: `{ticket_id}`\n"
+        f"• Hinzugefügt von: **{added_by.display_name}**\n\n"
+        f"Schreib einfach hier, deine Nachricht landet im Ticket."
+    )
+    emb = discord.Embed(
+        title=f"{info} TICKET-ZUGANG",
+        description=desc,
+        color=_color(settings),
+    )
+    _footer(emb, settings)
+    return emb
+
+
 def build_thread_status_embed(settings, guild: discord.Guild | None, title: str, text: str, actor: discord.Member | None = None):
     arrow2 = em(settings, "arrow2", guild)
     emb = discord.Embed(
@@ -192,6 +229,71 @@ def build_thread_rating_embed(settings, guild: discord.Guild | None, user_id: in
     emb = discord.Embed(
         title=f"{hearts} 𑁉 BEWERTUNG",
         description=desc,
+        color=_color(settings),
+    )
+    _footer(emb, settings)
+    return emb
+
+
+def build_dm_ticket_update_embed(settings, guild: discord.Guild | None, title: str, text: str):
+    info = em(settings, "info", guild) or "ℹ️"
+    arrow2 = em(settings, "arrow2", guild) or "»"
+    desc = f"{arrow2} {text}"
+    emb = discord.Embed(
+        title=f"{info} 𑁉 {title}",
+        description=desc,
+        color=_color(settings),
+    )
+    _footer(emb, settings)
+    return emb
+
+
+def build_dm_ticket_forwarded_embed(
+    settings,
+    guild: discord.Guild | None,
+    role_name: str,
+    reason: str | None,
+):
+    info = em(settings, "info", guild) or "ℹ️"
+    arrow2 = em(settings, "arrow2", guild) or "»"
+    reason_text = reason or "—"
+    desc = (
+        f"{arrow2} Ich habe dein Ticket weitergeleitet, damit dir die richtige Person helfen kann.\n\n"
+        f"┏`🎯` - Ziel: **{role_name}**\n"
+        f"┗`📝` - Grund: {reason_text}\n\n"
+        "Sobald jemand verfügbar ist, meldet sich das Team bei dir."
+    )
+    emb = discord.Embed(
+        title=f"{info} 𑁉 TICKET WEITERGELEITET",
+        description=desc,
+        color=_color(settings),
+    )
+    _footer(emb, settings)
+    return emb
+
+
+def build_ticket_log_embed(
+    settings,
+    guild: discord.Guild | None,
+    title: str,
+    text: str,
+    ticket_id: int,
+    thread: discord.Thread | None = None,
+    actor: discord.Member | None = None,
+):
+    info = em(settings, "info", guild) or "ℹ️"
+    arrow2 = em(settings, "arrow2", guild) or "»"
+    thread_line = f"{thread.mention} ({thread.id})" if thread else "—"
+    actor_line = f"{actor.mention} ({actor.id})" if actor else "—"
+    desc = (
+        f"┏`🎫` - Ticket: `{int(ticket_id)}`\n"
+        f"┣`🧵` - Thread: {thread_line}\n"
+        f"┣`👤` - Actor: {actor_line}\n"
+        f"┗`📝` - Info: {text}"
+    )
+    emb = discord.Embed(
+        title=f"{info} 𑁉 {title}",
+        description=f"{arrow2} Ticket-Event\n\n{desc}",
         color=_color(settings),
     )
     _footer(emb, settings)

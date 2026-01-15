@@ -1,4 +1,28 @@
+import re
 import discord
+
+
+class RatingButton(discord.ui.DynamicItem[discord.ui.Button], template=r"starry:rating:(?P<ticket_id>\d+):(?P<rating>\d+)"):
+    def __init__(self, ticket_id: int, rating: int):
+        self.ticket_id = int(ticket_id)
+        self.rating = int(rating)
+        btn = discord.ui.Button(
+            custom_id=f"starry:rating:{self.ticket_id}:{self.rating}",
+            style=discord.ButtonStyle.primary,
+            label=("⭐" * self.rating),
+        )
+        super().__init__(btn)
+
+    @classmethod
+    def from_custom_id(cls, interaction: discord.Interaction, item: discord.ui.Button, match: re.Match[str]):
+        return cls(int(match["ticket_id"]), int(match["rating"]))
+
+    async def callback(self, interaction: discord.Interaction):
+        service = getattr(interaction.client, "ticket_service", None)
+        if not service:
+            await interaction.response.send_message("Ticket-Service nicht bereit.", ephemeral=True)
+            return
+        await interaction.response.send_modal(RatingCommentModal(service, self.ticket_id, self.rating))
 
 
 class RatingCommentModal(discord.ui.Modal):

@@ -42,14 +42,15 @@ class ModerationService:
             ok = False
             err = f"{type(e).__name__}: {e}"
 
+        case_id = None
         if ok:
-            await self.db.add_infraction(guild.id, target.id, moderator.id, "timeout", int(minutes) * 60, reason)
+            case_id = await self.db.add_infraction(guild.id, target.id, moderator.id, "timeout", int(minutes) * 60, reason)
 
-        emb = build_timeout_embed(self.settings, guild, moderator, target, int(minutes), int(strikes), reason)
+        emb = build_timeout_embed(self.settings, guild, moderator, target, int(minutes), int(strikes), reason, case_id=case_id)
         if self.forum_logs:
             await self.forum_logs.emit("punishments", emb)
 
-        return ok, err, int(minutes), int(strikes)
+        return ok, err, int(minutes), int(strikes), case_id
 
     async def warn(self, guild: discord.Guild, moderator: discord.Member, target: discord.Member, reason: str | None):
         strikes = 1
@@ -61,13 +62,13 @@ class ModerationService:
         except Exception:
             strikes = 1
 
-        await self.db.add_infraction(guild.id, target.id, moderator.id, "warn", None, reason)
+        case_id = await self.db.add_infraction(guild.id, target.id, moderator.id, "warn", None, reason)
 
-        emb = build_warn_embed(self.settings, guild, moderator, target, strikes, reason)
+        emb = build_warn_embed(self.settings, guild, moderator, target, strikes, reason, case_id=case_id)
         if self.forum_logs:
             await self.forum_logs.emit("punishments", emb)
 
-        return strikes
+        return strikes, case_id
 
     async def kick(self, guild: discord.Guild, moderator: discord.Member, target: discord.Member, reason: str | None):
         ok = False
@@ -80,14 +81,15 @@ class ModerationService:
             ok = False
             err = f"{type(e).__name__}: {e}"
 
+        case_id = None
         if ok:
-            await self.db.add_infraction(guild.id, target.id, moderator.id, "kick", None, reason)
+            case_id = await self.db.add_infraction(guild.id, target.id, moderator.id, "kick", None, reason)
 
-        emb = build_kick_embed(self.settings, guild, moderator, target, reason)
+        emb = build_kick_embed(self.settings, guild, moderator, target, reason, case_id=case_id)
         if self.forum_logs:
             await self.forum_logs.emit("punishments", emb)
 
-        return ok, err
+        return ok, err, case_id
 
     async def ban(self, guild: discord.Guild, moderator: discord.Member, target: discord.User | discord.Member, delete_days: int, reason: str | None):
         ok = False
@@ -108,14 +110,15 @@ class ModerationService:
             ok = False
             err = f"{type(e).__name__}: {e}"
 
+        case_id = None
         if ok and uid:
-            await self.db.add_infraction(guild.id, uid, moderator.id, "ban", None, reason)
+            case_id = await self.db.add_infraction(guild.id, uid, moderator.id, "ban", None, reason)
 
-        emb = build_ban_embed(self.settings, guild, moderator, target, dd, reason)
+        emb = build_ban_embed(self.settings, guild, moderator, target, dd, reason, case_id=case_id)
         if self.forum_logs:
             await self.forum_logs.emit("punishments", emb)
 
-        return ok, err, dd
+        return ok, err, dd, case_id
 
     async def purge(self, guild: discord.Guild, moderator: discord.Member, channel: discord.TextChannel, amount: int, user: discord.Member | None):
         n = int(amount)
@@ -138,14 +141,32 @@ class ModerationService:
         except Exception as e:
             err = f"{type(e).__name__}: {e}"
 
-        emb = build_purge_embed(self.settings, guild, moderator, channel, deleted, n, user)
-        if self.forum_logs:
-            await self.forum_logs.emit("punishments", emb)
-
+        case_id = None
         if deleted > 0:
             try:
-                await self.db.add_infraction(guild.id, (user.id if user else 0), moderator.id, "purge", None, f"deleted={deleted}")
+                case_id = await self.db.add_infraction(guild.id, (user.id if user else 0), moderator.id, "purge", None, f"deleted={deleted}")
             except Exception:
                 pass
 
-        return deleted, err
+        try:
+            emb = build_purge_embed(self.settings, guild, moderator, channel, deleted, n, user, case_id=case_id)
+            if self.forum_logs:
+                await self.forum_logs.emit("punishments", emb)
+        except Exception:
+            pass
+
+        return deleted, err, case_id
+
+    async def softban(self, guild: discord.Guild, moderator: discord.Member, target: discord.User | discord.Member, delete_days: int, reason: str | None):
+        ok, err, dd, case_id = await self.ban(guild, moderator, target, delete_days, reason)
+        if not ok:
+            return False, err, case_id
+        try:
+            await guild.unban(target, reason="Softban unban")
+        except Exception:
+            pass
+        return True, None, case_id
+
+    async def add_note(self, guild: discord.Guild, moderator: discord.Member, target: discord.Member, note: str):
+        case_id = await self.db.add_infraction(guild.id, target.id, moderator.id, "note", None, note)
+        return case_id
