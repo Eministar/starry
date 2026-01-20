@@ -48,3 +48,44 @@ def build_application_dm_embed(settings, guild: discord.Guild | None, questions:
     emb = discord.Embed(title=f"{info} Bewerbung starten", description=desc, color=_color(settings, guild))
     _footer(emb, settings, guild)
     return emb
+
+
+def build_application_panel_embed(
+    settings,
+    guild: discord.Guild | None,
+    total: int,
+    open_: int,
+):
+    pen = em(settings, "pen", guild) or "📝"
+    arrow2 = em(settings, "arrow2", guild) or "»"
+    info = em(settings, "info", guild) or "ℹ️"
+    emb = discord.Embed(
+        title=f"{pen} 𑁉 BEWERBUNGS-PANEL",
+        description=(
+            f"{arrow2} Du moechtest Teil des Teams werden? Starte deine Bewerbung direkt hier.\n\n"
+            "Klick auf den Button und beantworte die Fragen ehrlich und klar."
+        ),
+        color=_color(settings, guild),
+    )
+    emb.add_field(
+        name="Ablauf",
+        value=(
+            "1) Button klicken\n"
+            "2) Fragen beantworten\n"
+            "3) Wir pruefen deine Bewerbung\n"
+            "4) Rueckmeldung im Thread"
+        ),
+        inline=False,
+    )
+    emb.add_field(
+        name=f"{info} Live-Stats",
+        value=(
+            f"Bewerbungen gesamt: **{total}**\n"
+            f"Offen: **{open_}**"
+        ),
+        inline=False,
+    )
+    if guild and guild.icon:
+        emb.set_thumbnail(url=guild.icon.url)
+    _footer(emb, settings, guild)
+    return emb

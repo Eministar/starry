@@ -4,6 +4,7 @@ from discord.ext import commands
 
 from bot.modules.applications.services.application_service import ApplicationService
 from bot.modules.applications.views.application_panel import ApplicationPanelView
+from bot.modules.applications.formatting.application_embeds import build_application_panel_embed
 from bot.core.perms import is_staff
 
 
@@ -64,8 +65,9 @@ class ApplicationCommands(commands.Cog):
         target = channel or interaction.channel
         if not isinstance(target, discord.abc.Messageable):
             return await interaction.response.send_message("Zielkanal ungültig.", ephemeral=True)
-        content = await self._build_application_panel_content()
-        await target.send(content=content, view=ApplicationPanelView())
+        stats = await self._build_application_panel_stats()
+        embed = build_application_panel_embed(self.bot.settings, interaction.guild, **stats)
+        await target.send(embed=embed, view=ApplicationPanelView())
         await interaction.response.send_message("Panel gesendet.", ephemeral=True)
 
     @commands.Cog.listener()
@@ -100,21 +102,7 @@ class ApplicationCommands(commands.Cog):
             return int(row[0]) if row and row[0] is not None else 0
         return 0
 
-    async def _build_application_panel_content(self) -> str:
+    async def _build_application_panel_stats(self) -> dict:
         total = await self._fetch_count("SELECT COUNT(*) FROM applications")
         open_ = await self._fetch_count("SELECT COUNT(*) FROM applications WHERE status = 'open'")
-        return "\n".join(
-            [
-                "📝 𑁉 BEWERBUNG PANEL",
-                "━━━━━━━━━━━━━━━━━━",
-                "┏`🧭` - So laeuft die Bewerbung:",
-                "┣`1` - Klick auf den Button",
-                "┣`2` - Beantworte die Fragen",
-                "┗`3` - Team meldet sich im Thread",
-                "━━━━━━━━━━━━━━━━━━",
-                "┏`📈` - Live Stats",
-                f"┣`📝` - Bewerbungen gesamt: {total}",
-                f"┗`🟡` - Offen: {open_}",
-                "━━━━━━━━━━━━━━━━━━",
-            ]
-        )
+        return {"total": total, "open_": open_}

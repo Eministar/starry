@@ -305,3 +305,46 @@ def build_ticket_log_embed(
     )
     _footer(emb, settings, guild)
     return emb
+
+
+def build_support_panel_embed(
+    settings,
+    guild: discord.Guild | None,
+    total: int,
+    open_: int,
+    active: int,
+):
+    lifebuoy = em(settings, "lifebuoy", guild) or "🛟"
+    arrow2 = em(settings, "arrow2", guild) or "»"
+    stats = em(settings, "stats", guild) or "📈"
+    emb = discord.Embed(
+        title=f"{lifebuoy} 𑁉 SUPPORT-PANEL",
+        description=(
+            f"{arrow2} Schnell Hilfe bekommen - direkt, strukturiert und nachvollziehbar.\n\n"
+            "Klick unten auf den Button, beschreibe dein Anliegen, und unser Team meldet sich so schnell wie moeglich."
+        ),
+        color=_color(settings, guild),
+    )
+    emb.add_field(
+        name="So funktioniert es",
+        value=(
+            "1) Button klicken\n"
+            "2) Ich schicke dir eine DM\n"
+            "3) Schreib dein Anliegen\n"
+            "4) Team antwortet im Ticket"
+        ),
+        inline=False,
+    )
+    emb.add_field(
+        name=f"{stats} Live-Stats",
+        value=(
+            f"Tickets gesamt: **{total}**\n"
+            f"Offen: **{open_}**\n"
+            f"Aktive User (24h): **{active}**"
+        ),
+        inline=False,
+    )
+    if guild and guild.icon:
+        emb.set_thumbnail(url=guild.icon.url)
+    _footer(emb, settings, guild)
+    return emb

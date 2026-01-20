@@ -4,6 +4,7 @@ from discord.ext import commands
 
 from bot.modules.tickets.services.ticket_service import TicketService
 from bot.modules.tickets.views.support_panel import SupportPanelView
+from bot.modules.tickets.formatting.ticket_embeds import build_support_panel_embed
 from bot.core.perms import is_staff
 
 
@@ -89,8 +90,9 @@ class TicketCommands(commands.Cog):
         target = channel or interaction.channel
         if not isinstance(target, discord.abc.Messageable):
             return await interaction.response.send_message("Zielkanal ungültig.", ephemeral=True)
-        content = await self._build_support_panel_content()
-        await target.send(content=content, view=SupportPanelView())
+        stats = await self._build_support_panel_stats()
+        embed = build_support_panel_embed(self.bot.settings, interaction.guild, **stats)
+        await target.send(embed=embed, view=SupportPanelView())
         await interaction.response.send_message("Panel gesendet.", ephemeral=True)
 
     async def _fetch_count(self, query: str) -> int:
@@ -117,7 +119,7 @@ class TicketCommands(commands.Cog):
             return int(row[0]) if row and row[0] is not None else 0
         return 0
 
-    async def _build_support_panel_content(self) -> str:
+    async def _build_support_panel_stats(self) -> dict:
         total = await self._fetch_count("SELECT COUNT(*) FROM tickets")
         open_ = await self._fetch_count("SELECT COUNT(*) FROM tickets WHERE status IS NULL OR status != 'closed'")
         active = await self._fetch_count(
@@ -125,19 +127,4 @@ class TicketCommands(commands.Cog):
             "WHERE (last_message_at IS NOT NULL AND datetime(last_message_at) >= datetime('now','-1 day')) "
             "OR (last_voice_at IS NOT NULL AND datetime(last_voice_at) >= datetime('now','-1 day'))"
         )
-        return "\n".join(
-            [
-                "🛟 𑁉 SUPPORT PANEL",
-                "━━━━━━━━━━━━━━━━━━",
-                "┏`📌` - So funktioniert Support:",
-                "┣`1` - Klick auf den Button",
-                "┣`2` - Ich schicke dir eine DM",
-                "┗`3` - Schreib dein Anliegen",
-                "━━━━━━━━━━━━━━━━━━",
-                "┏`📈` - Live Stats",
-                f"┣`🎫` - Tickets gesamt: {total}",
-                f"┣`🟢` - Offene Tickets: {open_}",
-                f"┗`👥` - Aktive User (24h): {active}",
-                "━━━━━━━━━━━━━━━━━━",
-            ]
-        )
+        return {"total": total, "open_": open_, "active": active}
