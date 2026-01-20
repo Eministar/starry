@@ -11,9 +11,9 @@ class TempVoiceCommands(commands.Cog):
             bot, bot.settings, bot.db, bot.logger
         )
 
-    tempvoice = app_commands.Group(name="tempvoice", description="Temp Voice Tools")
+    tempvoice = app_commands.Group(name="tempvoice", description="🎙️ 𑁉 Temp-Voice-Tools")
 
-    @tempvoice.command(name="panel", description="Temp-Voice Panel neu senden")
+    @tempvoice.command(name="panel", description="🎛️ 𑁉 Temp-Voice Panel senden")
     async def panel(self, interaction: discord.Interaction):
         if not interaction.guild or not isinstance(interaction.user, discord.Member):
             return await interaction.response.send_message("Nur im Server nutzbar.", ephemeral=True)

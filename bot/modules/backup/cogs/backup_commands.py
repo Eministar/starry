@@ -9,9 +9,9 @@ class BackupCommands(commands.Cog):
         self.bot = bot
         self.service = getattr(bot, "backup_service", None) or BackupService(bot, bot.settings, bot.db, bot.logger)
 
-    backup = app_commands.Group(name="backup", description="Backup-Tools")
+    backup = app_commands.Group(name="backup", description="💾 𑁉 Backup-Tools")
 
-    @backup.command(name="save", description="Backup speichern")
+    @backup.command(name="save", description="💾 𑁉 Backup speichern")
     @app_commands.describe(name="Optionaler Name des Backups")
     async def save(self, interaction: discord.Interaction, name: str | None = None):
         if not interaction.guild:
@@ -20,7 +20,7 @@ class BackupCommands(commands.Cog):
         backup_id, backup_name = await self.service.create_backup(interaction.guild, name=name)
         await interaction.followup.send(f"Backup gespeichert: `{backup_name}` (ID {backup_id})", ephemeral=True)
 
-    @backup.command(name="load", description="Backup wiederherstellen")
+    @backup.command(name="load", description="📥 𑁉 Backup wiederherstellen")
     @app_commands.describe(name="Backup-Name oder 'latest'")
     async def load(self, interaction: discord.Interaction, name: str = "latest"):
         if not interaction.guild:
@@ -35,7 +35,7 @@ class BackupCommands(commands.Cog):
             return await interaction.followup.send(f"Backup fehlgeschlagen: `{err}`", ephemeral=True)
         await interaction.followup.send("Backup geladen und synchronisiert.", ephemeral=True)
 
-    @backup.command(name="list", description="Backups auflisten")
+    @backup.command(name="list", description="📋 𑁉 Backups auflisten")
     async def list(self, interaction: discord.Interaction):
         if not interaction.guild:
             return await interaction.response.send_message("Nur im Server nutzbar.", ephemeral=True)
@@ -47,7 +47,7 @@ class BackupCommands(commands.Cog):
         emb = discord.Embed(title="💾 𑁉 BACKUPS", description=text, color=0xB16B91)
         await interaction.response.send_message(embed=emb, ephemeral=True)
 
-    @backup.command(name="diff", description="Zeigt Unterschiede zum Backup")
+    @backup.command(name="diff", description="🧭 𑁉 Unterschiede zum Backup")
     @app_commands.describe(name="Backup-Name oder 'latest'")
     async def diff(self, interaction: discord.Interaction, name: str = "latest"):
         if not interaction.guild:
@@ -71,7 +71,7 @@ class BackupCommands(commands.Cog):
         emb = discord.Embed(title="🧭 𑁉 BACKUP-DIFF", description=desc, color=0xB16B91)
         await interaction.response.send_message(embed=emb, ephemeral=True)
 
-    @backup.command(name="autosave", description="Auto-Backup aktivieren/deaktivieren")
+    @backup.command(name="autosave", description="⏱️ 𑁉 Auto-Backup aktivieren/deaktivieren")
     @app_commands.describe(enabled="True/False")
     async def autosave(self, interaction: discord.Interaction, enabled: bool):
         await self.bot.settings.set_override("backup.auto_save_enabled", bool(enabled))

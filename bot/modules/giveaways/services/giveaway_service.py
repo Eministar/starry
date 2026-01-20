@@ -15,14 +15,16 @@ class GiveawayService:
         self._pending = {}
 
     def _color(self, guild: discord.Guild | None) -> int:
-        v = str(self.settings.get("design.accent_color", "#B16B91") or "").replace("#", "").strip()
+        gid = guild.id if guild else 0
+        v = str(self.settings.get_guild(gid, "design.accent_color", "#B16B91") or "").replace("#", "").strip()
         try:
             return int(v, 16)
         except Exception:
             return 0xB16B91
 
     def _join_emoji(self, guild: discord.Guild | None) -> str:
-        token = str(self.settings.get("giveaway.join_emoji", "🎉") or "🎉").strip()
+        gid = guild.id if guild else 0
+        token = str(self.settings.get_guild(gid, "giveaway.join_emoji", "🎉") or "🎉").strip()
         if token.startswith("<") and token.endswith(">"):
             return token
         key = token[1:-1] if token.startswith(":") and token.endswith(":") else token
@@ -232,23 +234,20 @@ class GiveawayService:
         await interaction.response.send_message("Du bist dabei! 🎉", ephemeral=True)
 
     async def tick(self):
-        guild_id = self.settings.get_int("bot.guild_id")
-        if not guild_id:
-            return
-        guild = self.bot.get_guild(guild_id)
-        if not guild:
-            return
-        rows = await self.db.list_open_giveaways(guild.id)
         now = datetime.now(timezone.utc)
-        for row in rows:
-            giveaway_id, channel_id, message_id, end_at = row
-            try:
-                end_dt = datetime.fromisoformat(str(end_at))
-            except Exception:
+        for guild in list(self.bot.guilds):
+            if not self.settings.get_guild_bool(guild.id, "giveaway.enabled", True):
                 continue
-            if end_dt > now:
-                continue
-            await self._finish_giveaway(guild, int(giveaway_id), int(channel_id), int(message_id or 0))
+            rows = await self.db.list_open_giveaways(guild.id)
+            for row in rows:
+                giveaway_id, channel_id, message_id, end_at = row
+                try:
+                    end_dt = datetime.fromisoformat(str(end_at))
+                except Exception:
+                    continue
+                if end_dt > now:
+                    continue
+                await self._finish_giveaway(guild, int(giveaway_id), int(channel_id), int(message_id or 0))
 
     async def _finish_giveaway(self, guild: discord.Guild, giveaway_id: int, channel_id: int, message_id: int):
         await self.db.close_giveaway(giveaway_id)

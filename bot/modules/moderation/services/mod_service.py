@@ -48,7 +48,7 @@ class ModerationService:
 
         emb = build_timeout_embed(self.settings, guild, moderator, target, int(minutes), int(strikes), reason, case_id=case_id)
         if self.forum_logs:
-            await self.forum_logs.emit("punishments", emb)
+            await self.forum_logs.emit(guild, "punishments", emb)
 
         return ok, err, int(minutes), int(strikes), case_id
 
@@ -66,7 +66,7 @@ class ModerationService:
 
         emb = build_warn_embed(self.settings, guild, moderator, target, strikes, reason, case_id=case_id)
         if self.forum_logs:
-            await self.forum_logs.emit("punishments", emb)
+            await self.forum_logs.emit(guild, "punishments", emb)
 
         return strikes, case_id
 
@@ -87,7 +87,7 @@ class ModerationService:
 
         emb = build_kick_embed(self.settings, guild, moderator, target, reason, case_id=case_id)
         if self.forum_logs:
-            await self.forum_logs.emit("punishments", emb)
+            await self.forum_logs.emit(guild, "punishments", emb)
 
         return ok, err, case_id
 
@@ -116,7 +116,7 @@ class ModerationService:
 
         emb = build_ban_embed(self.settings, guild, moderator, target, dd, reason, case_id=case_id)
         if self.forum_logs:
-            await self.forum_logs.emit("punishments", emb)
+            await self.forum_logs.emit(guild, "punishments", emb)
 
         return ok, err, dd, case_id
 
@@ -151,7 +151,7 @@ class ModerationService:
         try:
             emb = build_purge_embed(self.settings, guild, moderator, channel, deleted, n, user, case_id=case_id)
             if self.forum_logs:
-                await self.forum_logs.emit("punishments", emb)
+                await self.forum_logs.emit(guild, "punishments", emb)
         except Exception:
             pass
 

@@ -21,10 +21,6 @@ class ChannelRoleLogListener(commands.Cog):
     def __init__(self, bot):
         self.bot = bot
 
-    def _guild_ok(self, guild: discord.Guild | None) -> bool:
-        gid = self.bot.settings.get_int("bot.guild_id")
-        return bool(guild and gid and guild.id == int(gid))
-
     async def _find_audit_actor(self, guild: discord.Guild, action: discord.AuditLogAction, target_id: int) -> discord.Member | None:
         try:
             now = time.time()
@@ -51,7 +47,7 @@ class ChannelRoleLogListener(commands.Cog):
 
     @commands.Cog.listener()
     async def on_guild_channel_create(self, channel: discord.abc.GuildChannel):
-        if not self._guild_ok(channel.guild):
+        if not channel.guild:
             return
         logs = getattr(self.bot, "forum_logs", None)
         if not logs:
@@ -62,11 +58,11 @@ class ChannelRoleLogListener(commands.Cog):
             actor = await self._find_audit_actor(channel.guild, discord.AuditLogAction.channel_create, channel.id)
 
         emb = build_channel_created_embed(self.bot.settings, channel.guild, channel, actor)
-        await logs.emit("channel_role", emb)
+        await logs.emit(channel.guild, "channel_role", emb)
 
     @commands.Cog.listener()
     async def on_guild_channel_delete(self, channel: discord.abc.GuildChannel):
-        if not self._guild_ok(channel.guild):
+        if not channel.guild:
             return
         logs = getattr(self.bot, "forum_logs", None)
         if not logs:
@@ -77,11 +73,11 @@ class ChannelRoleLogListener(commands.Cog):
             actor = await self._find_audit_actor(channel.guild, discord.AuditLogAction.channel_delete, channel.id)
 
         emb = build_channel_deleted_embed(self.bot.settings, channel.guild, channel, actor)
-        await logs.emit("channel_role", emb)
+        await logs.emit(channel.guild, "channel_role", emb)
 
     @commands.Cog.listener()
     async def on_guild_channel_update(self, before: discord.abc.GuildChannel, after: discord.abc.GuildChannel):
-        if not self._guild_ok(after.guild):
+        if not after.guild:
             return
         logs = getattr(self.bot, "forum_logs", None)
         if not logs:
@@ -93,11 +89,11 @@ class ChannelRoleLogListener(commands.Cog):
 
         emb = build_channel_updated_embed(self.bot.settings, after.guild, before, after, actor)
         if emb:
-            await logs.emit("channel_role", emb)
+            await logs.emit(after.guild, "channel_role", emb)
 
     @commands.Cog.listener()
     async def on_guild_role_create(self, role: discord.Role):
-        if not self._guild_ok(role.guild):
+        if not role.guild:
             return
         logs = getattr(self.bot, "forum_logs", None)
         if not logs:
@@ -108,11 +104,11 @@ class ChannelRoleLogListener(commands.Cog):
             actor = await self._find_audit_actor(role.guild, discord.AuditLogAction.role_create, role.id)
 
         emb = build_role_created_embed(self.bot.settings, role.guild, role, actor)
-        await logs.emit("channel_role", emb)
+        await logs.emit(role.guild, "channel_role", emb)
 
     @commands.Cog.listener()
     async def on_guild_role_delete(self, role: discord.Role):
-        if not self._guild_ok(role.guild):
+        if not role.guild:
             return
         logs = getattr(self.bot, "forum_logs", None)
         if not logs:
@@ -123,11 +119,11 @@ class ChannelRoleLogListener(commands.Cog):
             actor = await self._find_audit_actor(role.guild, discord.AuditLogAction.role_delete, role.id)
 
         emb = build_role_deleted_embed(self.bot.settings, role.guild, role, actor)
-        await logs.emit("channel_role", emb)
+        await logs.emit(role.guild, "channel_role", emb)
 
     @commands.Cog.listener()
     async def on_guild_role_update(self, before: discord.Role, after: discord.Role):
-        if not self._guild_ok(after.guild):
+        if not after.guild:
             return
         logs = getattr(self.bot, "forum_logs", None)
         if not logs:
@@ -139,11 +135,11 @@ class ChannelRoleLogListener(commands.Cog):
 
         emb = build_role_updated_embed(self.bot.settings, after.guild, before, after, actor)
         if emb:
-            await logs.emit("channel_role", emb)
+            await logs.emit(after.guild, "channel_role", emb)
 
     @commands.Cog.listener()
     async def on_member_update(self, before: discord.Member, after: discord.Member):
-        if not self._guild_ok(after.guild):
+        if not after.guild:
             return
         logs = getattr(self.bot, "forum_logs", None)
         if not logs:
@@ -163,4 +159,4 @@ class ChannelRoleLogListener(commands.Cog):
 
         emb = build_member_roles_changed_embed(self.bot.settings, after.guild, before, after, actor)
         if emb:
-            await logs.emit("channel_role", emb)
+            await logs.emit(after.guild, "channel_role", emb)

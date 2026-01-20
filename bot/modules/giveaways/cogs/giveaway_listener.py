@@ -12,9 +12,9 @@ class GiveawayListener(commands.Cog):
     async def on_raw_reaction_add(self, payload: discord.RawReactionActionEvent):
         if payload.user_id == self.bot.user.id:
             return
-        if not self.bot.settings.get_bool("giveaway.enabled", True):
-            return
         if not payload.guild_id:
+            return
+        if not self.bot.settings.get_guild_bool(payload.guild_id, "giveaway.enabled", True):
             return
         row = await self.bot.db.get_giveaway_by_message(payload.guild_id, payload.message_id)
         if not row:

@@ -46,6 +46,7 @@ async def main():
 
     db = Database("data/starry.db")
     await db.init()
+    await settings.load_guild_overrides(db)
 
     logger = StarryLogger(settings=settings, db=db)
 

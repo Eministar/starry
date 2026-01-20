@@ -7,9 +7,9 @@ class RolesCommands(commands.Cog):
     def __init__(self, bot):
         self.bot = bot
 
-    roles = app_commands.Group(name="roles", description="Rollen-Tools")
+    roles = app_commands.Group(name="roles", description="🧩 𑁉 Rollen-Tools")
 
-    @roles.command(name="sync", description="Auto-Rollen jetzt anlegen/syncen")
+    @roles.command(name="sync", description="🔄 𑁉 Auto-Rollen syncen")
     async def sync(self, interaction: discord.Interaction):
         if not interaction.guild:
             return await interaction.response.send_message("Nur im Server nutzbar.", ephemeral=True)

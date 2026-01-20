@@ -16,12 +16,19 @@ def parse_hex_color(value: str | None, default: int = 0xB16B91) -> int:
         return default
 
 
-def _color(settings) -> int:
-    return parse_hex_color(settings.get("design.accent_color", "#B16B91"), 0xB16B91)
+def _color(settings, guild: discord.Guild | None) -> int:
+    if guild:
+        value = settings.get_guild(guild.id, "design.accent_color", "#B16B91")
+    else:
+        value = settings.get("design.accent_color", "#B16B91")
+    return parse_hex_color(value, 0xB16B91)
 
 
-def _footer(emb: discord.Embed, settings):
-    ft = settings.get("design.footer_text", None)
+def _footer(emb: discord.Embed, settings, guild: discord.Guild | None):
+    if guild:
+        ft = settings.get_guild(guild.id, "design.footer_text", None)
+    else:
+        ft = settings.get("design.footer_text", None)
     if ft:
         emb.set_footer(text=str(ft))
 
@@ -73,9 +80,9 @@ def build_log_embed(settings, event: str, payload: dict):
     emb = discord.Embed(
         title=f"{info} 𑁉 LOG • {str(event).upper()}",
         description=desc,
-        color=_color(settings),
+        color=_color(settings, None),
     )
-    _footer(emb, settings)
+    _footer(emb, settings, None)
     return emb
 
 
@@ -96,8 +103,8 @@ def build_message_edited_embed(
         f"🔴 **Vorher:**\n{_cut(before, 1500) or '—'}\n\n"
         f"🟢 **Nachher:**\n{_cut(after, 1500) or '—'}"
     )
-    emb = discord.Embed(title=f"{chat} 𑁉 NACHRICHT BEARBEITET!", description=desc, color=_color(settings))
-    _footer(emb, settings)
+    emb = discord.Embed(title=f"{chat} 𑁉 NACHRICHT BEARBEITET!", description=desc, color=_color(settings, guild))
+    _footer(emb, settings, guild)
     return emb
 
 
@@ -116,8 +123,8 @@ def build_message_deleted_embed(
         f"┗`🆔` - ID: `{int(msg_id)}`\n\n"
         f"┏`📝` - Nachricht-Inhalt:\n{_cut(content, 1800) or '—'}"
     )
-    emb = discord.Embed(title=f"{red} 𑁉 NACHRICHT GELÖSCHT!", description=desc, color=_color(settings))
-    _footer(emb, settings)
+    emb = discord.Embed(title=f"{red} 𑁉 NACHRICHT GELÖSCHT!", description=desc, color=_color(settings, guild))
+    _footer(emb, settings, guild)
     return emb
 
 
@@ -127,9 +134,9 @@ def build_join_embed(settings, guild: discord.Guild, member: discord.Member):
         f"┏`👤` - User: {member.mention} ({member.id})\n"
         f"┗`🌈` - Account erstellt: {format_dt(member.created_at, style='R')}"
     )
-    emb = discord.Embed(title=f"{green} 𑁉 JOIN", description=desc, color=_color(settings))
+    emb = discord.Embed(title=f"{green} 𑁉 JOIN", description=desc, color=_color(settings, guild))
     emb.set_thumbnail(url=member.display_avatar.url)
-    _footer(emb, settings)
+    _footer(emb, settings, guild)
     return emb
 
 
@@ -139,9 +146,9 @@ def build_leave_embed(settings, guild: discord.Guild, user: discord.User):
         f"┏`👤` - User: <@{user.id}> ({user.id})\n"
         f"┗`🌈` - Account erstellt: {format_dt(user.created_at, style='R')}"
     )
-    emb = discord.Embed(title=f"{red} 𑁉 LEAVE", description=desc, color=_color(settings))
+    emb = discord.Embed(title=f"{red} 𑁉 LEAVE", description=desc, color=_color(settings, guild))
     emb.set_thumbnail(url=user.display_avatar.url)
-    _footer(emb, settings)
+    _footer(emb, settings, guild)
     return emb
 
 
@@ -152,8 +159,8 @@ def build_channel_created_embed(settings, guild: discord.Guild, channel: discord
         f"┣`🧩` - Typ: {_channel_kind(channel)}\n"
         f"┗`🧑` - Actor: {_actor_line(actor)}"
     )
-    emb = discord.Embed(title=f"{green} 𑁉 KANAL ERSTELLT", description=desc, color=_color(settings))
-    _footer(emb, settings)
+    emb = discord.Embed(title=f"{green} 𑁉 KANAL ERSTELLT", description=desc, color=_color(settings, guild))
+    _footer(emb, settings, guild)
     return emb
 
 
@@ -165,8 +172,8 @@ def build_channel_deleted_embed(settings, guild: discord.Guild, channel: discord
         f"┣`🧩` - Typ: {_channel_kind(channel)}\n"
         f"┗`🧑` - Actor: {_actor_line(actor)}"
     )
-    emb = discord.Embed(title=f"{red} 𑁉 KANAL GELÖSCHT", description=desc, color=_color(settings))
-    _footer(emb, settings)
+    emb = discord.Embed(title=f"{red} 𑁉 KANAL GELÖSCHT", description=desc, color=_color(settings, guild))
+    _footer(emb, settings, guild)
     return emb
 
 
@@ -218,8 +225,8 @@ def build_channel_updated_embed(
         f"┗`🧑` - Actor: {_actor_line(actor)}\n\n"
     )
     body = "\n\n".join(changes)
-    emb = discord.Embed(title=f"{info} 𑁉 KANAL UPDATED", description=head + body, color=_color(settings))
-    _footer(emb, settings)
+    emb = discord.Embed(title=f"{info} 𑁉 KANAL UPDATED", description=head + body, color=_color(settings, guild))
+    _footer(emb, settings, guild)
     return emb
 
 
@@ -230,8 +237,8 @@ def build_role_created_embed(settings, guild: discord.Guild, role: discord.Role,
         f"┣`🎨` - Farbe: `{role.color}`\n"
         f"┗`🧑` - Actor: {_actor_line(actor)}"
     )
-    emb = discord.Embed(title=f"{green} 𑁉 ROLLE ERSTELLT", description=desc, color=_color(settings))
-    _footer(emb, settings)
+    emb = discord.Embed(title=f"{green} 𑁉 ROLLE ERSTELLT", description=desc, color=_color(settings, guild))
+    _footer(emb, settings, guild)
     return emb
 
 
@@ -242,8 +249,8 @@ def build_role_deleted_embed(settings, guild: discord.Guild, role: discord.Role,
         f"┣`🎨` - Farbe: `{role.color}`\n"
         f"┗`🧑` - Actor: {_actor_line(actor)}"
     )
-    emb = discord.Embed(title=f"{red} 𑁉 ROLLE GELÖSCHT", description=desc, color=_color(settings))
-    _footer(emb, settings)
+    emb = discord.Embed(title=f"{red} 𑁉 ROLLE GELÖSCHT", description=desc, color=_color(settings, guild))
+    _footer(emb, settings, guild)
     return emb
 
 
@@ -277,8 +284,8 @@ def build_role_updated_embed(settings, guild: discord.Guild, before: discord.Rol
         f"┗`🧑` - Actor: {_actor_line(actor)}\n\n"
     )
     body = "\n\n".join(changes)
-    emb = discord.Embed(title=f"{info} 𑁉 ROLLE UPDATED", description=head + body, color=_color(settings))
-    _footer(emb, settings)
+    emb = discord.Embed(title=f"{info} 𑁉 ROLLE UPDATED", description=head + body, color=_color(settings, guild))
+    _footer(emb, settings, guild)
     return emb
 
 
@@ -301,8 +308,8 @@ def build_member_roles_changed_embed(settings, guild: discord.Guild, before: dis
         f"┣`➖` - Removed: {rem_s}\n"
         f"┗`🧑` - Actor: {_actor_line(actor)}"
     )
-    emb = discord.Embed(title=f"{info} 𑁉 USER-ROLLEN UPDATED", description=desc, color=_color(settings))
-    _footer(emb, settings)
+    emb = discord.Embed(title=f"{info} 𑁉 USER-ROLLEN UPDATED", description=desc, color=_color(settings, guild))
+    _footer(emb, settings, guild)
     return emb
 
 
@@ -328,6 +335,6 @@ def build_bot_error_embed(settings, guild: discord.Guild | None, where: str, err
         + f"```py\n{tb}\n```"
     )
 
-    emb = discord.Embed(title=f"{red} 𑁉 BOT FEHLER", description=desc, color=_color(settings))
-    _footer(emb, settings)
+    emb = discord.Embed(title=f"{red} 𑁉 BOT FEHLER", description=desc, color=_color(settings, guild))
+    _footer(emb, settings, guild)
     return emb

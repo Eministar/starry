@@ -1,5 +1,4 @@
 import calendar
-import json
 from datetime import datetime, timezone
 from zoneinfo import ZoneInfo
 import discord
@@ -12,17 +11,15 @@ class BirthdayService:
         self.db = db
         self.logger = logger
 
-    def _tz(self):
-        tz_name = str(self.settings.get("birthday.timezone", "UTC") or "UTC")
+    def _tz(self, guild_id: int):
+        tz_name = str(self.settings.get_guild(guild_id, "birthday.timezone", "UTC") or "UTC")
         try:
             return ZoneInfo(tz_name)
         except Exception:
             return timezone.utc
 
-    def _emoji(self, key: str, fallback: str):
+    def _emoji(self, guild: discord.Guild, key: str, fallback: str):
         from bot.utils.emojis import em
-        guild_id = self.settings.get_int("bot.guild_id")
-        guild = self.bot.get_guild(guild_id) if guild_id else None
         return em(self.settings, key, guild) or fallback
 
     async def set_birthday(self, interaction: discord.Interaction, day: int, month: int, year: int):
@@ -33,7 +30,7 @@ class BirthdayService:
         except Exception:
             return await interaction.response.send_message("Ungültiges Datum.", ephemeral=True)
 
-        await self.db.set_birthday(interaction.guild.id, interaction.user.id, int(day), int(month), int(year))
+        await self.db.set_birthday_global(interaction.user.id, int(day), int(month), int(year))
         await self._apply_age_roles(interaction.user, int(year))
         await self._grant_success(interaction.user)
         await interaction.response.send_message("Geburtstag gespeichert. 🎉", ephemeral=True)
@@ -41,14 +38,14 @@ class BirthdayService:
     async def remove_birthday(self, interaction: discord.Interaction):
         if not interaction.guild or not isinstance(interaction.user, discord.Member):
             return await interaction.response.send_message("Nur im Server nutzbar.", ephemeral=True)
-        await self.db.remove_birthday(interaction.guild.id, interaction.user.id)
+        await self.db.remove_birthday_global(interaction.user.id)
         await interaction.response.send_message("Geburtstag entfernt.", ephemeral=True)
 
     async def _apply_age_roles(self, member: discord.Member, year: int):
-        now = datetime.now(self._tz())
+        now = datetime.now(self._tz(member.guild.id))
         age = now.year - int(year)
-        under_role_id = self.settings.get_int("birthday.under_18_role_id")
-        adult_role_id = self.settings.get_int("birthday.adult_role_id")
+        under_role_id = self.settings.get_guild_int(member.guild.id, "birthday.under_18_role_id")
+        adult_role_id = self.settings.get_guild_int(member.guild.id, "birthday.adult_role_id")
         under_role = member.guild.get_role(under_role_id) if under_role_id else None
         adult_role = member.guild.get_role(adult_role_id) if adult_role_id else None
 
@@ -76,7 +73,7 @@ class BirthdayService:
                     pass
 
     async def _grant_success(self, member: discord.Member):
-        role_id = self.settings.get_int("birthday.success_role_id")
+        role_id = self.settings.get_guild_int(member.guild.id, "birthday.success_role_id")
         if role_id:
             role = member.guild.get_role(role_id)
             if role and role not in member.roles:
@@ -92,7 +89,7 @@ class BirthdayService:
         await self._ensure_birthday_role(member)
 
     async def _ensure_birthday_role(self, member: discord.Member):
-        role_id = self.settings.get_int("birthday.role_id")
+        role_id = self.settings.get_guild_int(member.guild.id, "birthday.role_id")
         if not role_id:
             return
         role = member.guild.get_role(role_id)
@@ -105,10 +102,10 @@ class BirthdayService:
     async def ensure_roles(self, guild: discord.Guild):
         if not guild:
             return
-        birthday_role_name = str(self.settings.get("birthday.role_name", "🎂 • GEBURTSTAG") or "🎂 • GEBURTSTAG")
-        under_name = str(self.settings.get("birthday.under_18_role_name", "🧒 • U18") or "🧒 • U18")
-        adult_name = str(self.settings.get("birthday.adult_role_name", "🔞 • 18+") or "🔞 • 18+")
-        success_name = str(self.settings.get("birthday.success_role_name", "🏆 • GEBURTSTAG") or "🏆 • GEBURTSTAG")
+        birthday_role_name = str(self.settings.get_guild(guild.id, "birthday.role_name", "🎂 • GEBURTSTAG") or "🎂 • GEBURTSTAG")
+        under_name = str(self.settings.get_guild(guild.id, "birthday.under_18_role_name", "🧒 • U18") or "🧒 • U18")
+        adult_name = str(self.settings.get_guild(guild.id, "birthday.adult_role_name", "🔞 • 18+") or "🔞 • 18+")
+        success_name = str(self.settings.get_guild(guild.id, "birthday.success_role_name", "🏆 • GEBURTSTAG") or "🏆 • GEBURTSTAG")
 
         await self._ensure_role(guild, "birthday.role_id", birthday_role_name)
         await self._ensure_role(guild, "birthday.under_18_role_id", under_name)
@@ -116,7 +113,7 @@ class BirthdayService:
         await self._ensure_role(guild, "birthday.success_role_id", success_name)
 
     async def _ensure_role(self, guild: discord.Guild, settings_path: str, name: str):
-        role_id = self.settings.get_int(settings_path)
+        role_id = self.settings.get_guild_int(guild.id, settings_path)
         role = guild.get_role(role_id) if role_id else None
         if not role:
             try:
@@ -124,14 +121,13 @@ class BirthdayService:
             except Exception:
                 role = None
             if role:
-                await self.settings.set_override(settings_path, int(role.id))
-                await self.db.set_guild_config(guild.id, settings_path, json.dumps(int(role.id)))
+                await self.settings.set_guild_override(self.db, guild.id, settings_path, int(role.id))
                 await self._announce_created_roles(guild, [role], "Geburtstagsrollen")
 
     async def _announce_created_roles(self, guild: discord.Guild, roles: list[discord.Role], title: str):
         if not roles:
             return
-        ch_id = self.settings.get_int("roles.announce_channel_id") or self.settings.get_int("bot.log_channel_id")
+        ch_id = self.settings.get_guild_int(guild.id, "roles.announce_channel_id") or self.settings.get_guild_int(guild.id, "bot.log_channel_id")
         if not ch_id:
             return
         ch = guild.get_channel(ch_id)
@@ -156,7 +152,7 @@ class BirthdayService:
             pass
 
     async def _grant_achievement_role(self, member: discord.Member, code: str):
-        achievements = self.settings.get("achievements.items", []) or []
+        achievements = self.settings.get_guild(member.guild.id, "achievements.items", []) or []
         payload = next((a for a in achievements if str(a.get("code")) == code), None)
         if not payload:
             return
@@ -171,7 +167,7 @@ class BirthdayService:
                 pass
 
     async def _dm_achievement(self, member: discord.Member, code: str):
-        achievements = self.settings.get("achievements.items", []) or []
+        achievements = self.settings.get_guild(member.guild.id, "achievements.items", []) or []
         payload = next((a for a in achievements if str(a.get("code")) == code), None)
         if not payload:
             return
@@ -184,7 +180,7 @@ class BirthdayService:
             pass
 
     async def announce_today(self, guild: discord.Guild):
-        channel_id = self.settings.get_int("birthday.channel_id")
+        channel_id = self.settings.get_guild_int(guild.id, "birthday.channel_id")
         if not channel_id:
             return False
         ch = guild.get_channel(channel_id)
@@ -196,14 +192,14 @@ class BirthdayService:
         if not ch or not isinstance(ch, discord.abc.Messageable):
             return False
 
-        now = datetime.now(self._tz())
-        rows = await self.db.list_birthdays_for_day(guild.id, now.day, now.month)
+        now = datetime.now(self._tz(guild.id))
+        rows = await self.db.list_birthdays_for_day_global(now.day, now.month)
         if not rows:
             return True
 
-        cake = self._emoji("cake", "🎂")
-        party = self._emoji("party", "🎉")
-        heart = self._emoji("hearts", "💖")
+        cake = self._emoji(guild, "cake", "🎂")
+        party = self._emoji(guild, "party", "🎉")
+        heart = self._emoji(guild, "hearts", "💖")
 
         lines = []
         for row in rows:
@@ -220,28 +216,25 @@ class BirthdayService:
         return True
 
     async def tick_midnight(self):
-        guild_id = self.settings.get_int("bot.guild_id")
-        if not guild_id:
-            return
-        guild = self.bot.get_guild(guild_id)
-        if not guild:
-            return
-        tz = self._tz()
-        today = datetime.now(tz).date().isoformat()
-        last = self.settings.get("birthday.last_announce_date", None)
-        if last == today:
-            return
-        ok = await self.announce_today(guild)
-        if ok:
-            await self.settings.set_override("birthday.last_announce_date", today)
+        for guild in list(self.bot.guilds):
+            if not self.settings.get_guild_bool(guild.id, "birthday.enabled", True):
+                continue
+            tz = self._tz(guild.id)
+            today = datetime.now(tz).date().isoformat()
+            last = self.settings.get_guild(guild.id, "birthday.last_announce_date", None)
+            if last == today:
+                continue
+            ok = await self.announce_today(guild)
+            if ok:
+                await self.settings.set_guild_override(self.db, guild.id, "birthday.last_announce_date", today)
 
     async def auto_react(self, message: discord.Message):
         if not message.guild:
             return
-        channel_id = self.settings.get_int("birthday.channel_id")
+        channel_id = self.settings.get_guild_int(message.guild.id, "birthday.channel_id")
         if not channel_id or message.channel.id != channel_id:
             return
-        emoji = self.settings.get("birthday.auto_react_emoji", "❤️")
+        emoji = self.settings.get_guild(message.guild.id, "birthday.auto_react_emoji", "❤️")
         try:
             await message.add_reaction(str(emoji))
         except Exception:
@@ -251,7 +244,7 @@ class BirthdayService:
         if not interaction.guild:
             return await interaction.response.send_message("Nur im Server nutzbar.", ephemeral=True)
         member = user or interaction.user
-        row = await self.db.get_birthday(interaction.guild.id, member.id)
+        row = await self.db.get_birthday_global(member.id)
         if not row:
             return await interaction.response.send_message("Kein Geburtstag gespeichert.", ephemeral=True)
         day, month, year = int(row[0]), int(row[1]), int(row[2])
@@ -262,11 +255,11 @@ class BirthdayService:
         )
 
     async def build_birthday_list_embed(self, guild: discord.Guild, page: int = 1, per_page: int = 10):
-        total = await self.db.count_birthdays(guild.id)
+        total = await self.db.count_birthdays_global()
         total_pages = max(1, (total + per_page - 1) // per_page)
         page = max(1, min(page, total_pages))
         offset = (page - 1) * per_page
-        rows = await self.db.list_birthdays(guild.id, limit=per_page, offset=offset)
+        rows = await self.db.list_birthdays_global(limit=per_page, offset=offset)
 
         lines = []
         for row in rows:
@@ -277,7 +270,7 @@ class BirthdayService:
             lines.append(f"• {name} — **{day}. {month_name} {year}**")
         text = "\n".join(lines) if lines else "Keine Geburtstage gespeichert."
 
-        cake = self._emoji("cake", "🎂")
+        cake = self._emoji(guild, "cake", "🎂")
         emb = discord.Embed(
             title=f"{cake} 𑁉 GEBURTSTAGE",
             description=text,

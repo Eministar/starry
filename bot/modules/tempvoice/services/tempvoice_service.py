@@ -32,34 +32,34 @@ class TempVoiceService:
         self.db = db
         self.logger = logger
 
-    def _enabled(self) -> bool:
-        return bool(self.settings.get_bool("tempvoice.enabled", True))
+    def _enabled(self, guild_id: int) -> bool:
+        return bool(self.settings.get_guild_bool(int(guild_id), "tempvoice.enabled", True))
 
-    def _join_channel_id(self) -> int:
-        return int(self.settings.get_int("tempvoice.join_channel_id") or 0)
+    def _join_channel_id(self, guild_id: int) -> int:
+        return int(self.settings.get_guild_int(int(guild_id), "tempvoice.join_channel_id") or 0)
 
-    def _panel_channel_id(self) -> int:
-        return int(self.settings.get_int("tempvoice.panel_channel_id") or 0)
+    def _panel_channel_id(self, guild_id: int) -> int:
+        return int(self.settings.get_guild_int(int(guild_id), "tempvoice.panel_channel_id") or 0)
 
-    def _category_id(self) -> int:
-        return int(self.settings.get_int("tempvoice.category_id") or 0)
+    def _category_id(self, guild_id: int) -> int:
+        return int(self.settings.get_guild_int(int(guild_id), "tempvoice.category_id") or 0)
 
-    def _name_format(self) -> str:
-        return str(self.settings.get("tempvoice.name_format", "{user} - Temp") or "{user} - Temp")
+    def _name_format(self, guild_id: int) -> str:
+        return str(self.settings.get_guild(int(guild_id), "tempvoice.name_format", "{user} - Temp") or "{user} - Temp")
 
-    def _default_limit(self) -> int:
-        return int(self.settings.get_int("tempvoice.user_limit_default") or 0)
+    def _default_limit(self, guild_id: int) -> int:
+        return int(self.settings.get_guild_int(int(guild_id), "tempvoice.user_limit_default") or 0)
 
-    def _default_bitrate(self) -> int | None:
-        val = int(self.settings.get_int("tempvoice.bitrate_default") or 0)
+    def _default_bitrate(self, guild_id: int) -> int | None:
+        val = int(self.settings.get_guild_int(int(guild_id), "tempvoice.bitrate_default") or 0)
         return val * 1000 if val > 0 else None
 
-    def _default_region(self) -> str | None:
-        val = str(self.settings.get("tempvoice.region_default", "auto") or "auto").strip().lower()
+    def _default_region(self, guild_id: int) -> str | None:
+        val = str(self.settings.get_guild(int(guild_id), "tempvoice.region_default", "auto") or "auto").strip().lower()
         return None if val in {"auto", "automatic", "none"} else val
 
-    def _auto_delete(self) -> bool:
-        return bool(self.settings.get_bool("tempvoice.auto_delete_empty", True))
+    def _auto_delete(self, guild_id: int) -> bool:
+        return bool(self.settings.get_guild_bool(int(guild_id), "tempvoice.auto_delete_empty", True))
 
     def _panel_mention(self) -> str:
         return em(self.settings, "info", None) or "ℹ️"
@@ -70,13 +70,13 @@ class TempVoiceService:
         before: discord.VoiceState,
         after: discord.VoiceState,
     ):
-        if not self._enabled() or member.bot:
+        if not self._enabled(member.guild.id) or member.bot:
             return
 
         if before.channel and (not after.channel or before.channel.id != after.channel.id):
             await self._cleanup_if_empty(member.guild, before.channel)
 
-        if after.channel and after.channel.id == self._join_channel_id():
+        if after.channel and after.channel.id == self._join_channel_id(member.guild.id):
             await self._join_to_create(member, after.channel)
 
     async def handle_channel_delete(self, guild: discord.Guild, channel_id: int):
@@ -86,7 +86,7 @@ class TempVoiceService:
             pass
 
     async def _cleanup_if_empty(self, guild: discord.Guild, channel: discord.VoiceChannel):
-        if not self._auto_delete():
+        if not self._auto_delete(guild.id):
             return
         room = _normalize_room(await self.db.get_tempvoice_room_by_channel(guild.id, channel.id))
         if not room:
@@ -145,7 +145,7 @@ class TempVoiceService:
                 pass
 
         category = None
-        cat_id = self._category_id()
+        cat_id = self._category_id(guild.id)
         if cat_id:
             category = guild.get_channel(cat_id)
             if not isinstance(category, discord.CategoryChannel):
@@ -153,7 +153,7 @@ class TempVoiceService:
         if not category and join_channel.category:
             category = join_channel.category
 
-        name = self._name_format().format(user=member.display_name, user_id=member.id)
+        name = self._name_format(guild.id).format(user=member.display_name, user_id=member.id)
         name = name[:90]
         overwrites = {
             guild.default_role: discord.PermissionOverwrite(view_channel=True, connect=True),
@@ -166,10 +166,10 @@ class TempVoiceService:
                 deafen_members=True,
             ),
         }
-        bitrate = self._default_bitrate()
+        bitrate = self._default_bitrate(guild.id)
         if bitrate and bitrate > guild.bitrate_limit:
             bitrate = guild.bitrate_limit
-        user_limit = self._default_limit()
+        user_limit = self._default_limit(guild.id)
 
         created = await guild.create_voice_channel(
             name=name,
@@ -177,7 +177,7 @@ class TempVoiceService:
             overwrites=overwrites,
             user_limit=max(0, int(user_limit)),
             bitrate=bitrate or None,
-            rtc_region=self._default_region(),
+            rtc_region=self._default_region(guild.id),
             reason="TempVoice create",
         )
         try:

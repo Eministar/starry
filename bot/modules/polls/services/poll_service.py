@@ -12,7 +12,8 @@ class PollService:
         self.logger = logger
 
     def _color(self, guild: discord.Guild | None) -> int:
-        v = str(self.settings.get("design.accent_color", "#B16B91") or "").replace("#", "").strip()
+        gid = guild.id if guild else 0
+        v = str(self.settings.get_guild(gid, "design.accent_color", "#B16B91") or "").replace("#", "").strip()
         try:
             return int(v, 16)
         except Exception:

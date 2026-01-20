@@ -10,6 +10,8 @@ class BirthdayListener(commands.Cog):
 
     @commands.Cog.listener()
     async def on_message(self, message: discord.Message):
-        if not self.bot.settings.get_bool("birthday.enabled", True):
+        if not message.guild:
+            return
+        if not self.bot.settings.get_guild_bool(message.guild.id, "birthday.enabled", True):
             return
         await self.service.auto_react(message)

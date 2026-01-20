@@ -1,5 +1,4 @@
 bot:
-  guild_id:
   token: "0"
   forum_channel_id:
   log_forum_channel_id:
@@ -9,11 +8,23 @@ bot:
   dashboard:
     host: "0.0.0.0"
     port: 8787
-    token: "change-me-now"
+    client_id: ""
+    client_secret: ""
+    redirect_uri: "http://localhost:8787/oauth/callback"
 
 
 logs:
   enabled: true
+
+
+news:
+  enabled: true
+  channel_id: 0
+  ping_role_id: 0
+  interval_minutes: 30
+  api_url: "https://www.tagesschau.de/api2u/news"
+  last_posted_id:
+  last_posted_at:
 
 
 ticket:

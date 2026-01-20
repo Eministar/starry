@@ -3,199 +3,259 @@
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width,initial-scale=1">
-  <title>Starry Dashboard</title>
+  <title>Starry Control</title>
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-  <link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500&family=Space+Grotesk:wght@400;500;600;700&display=swap" rel="stylesheet">
+  <link href="https://fonts.googleapis.com/css2?family=Bricolage+Grotesque:wght@300;400;600;700&family=Space+Mono:wght@400;700&display=swap" rel="stylesheet">
   <link rel="stylesheet" href="/static/styles.css">
 </head>
 <body>
-  <div class="bg-orb orb-a"></div>
-  <div class="bg-orb orb-b"></div>
-  <div class="wrap">
-    <header class="top">
+  <div class="bg-grid"></div>
+  <div class="bg-glow glow-a"></div>
+  <div class="bg-glow glow-b"></div>
+
+  <div class="app">
+    <aside class="sidebar">
       <div class="brand">
         <div class="logo">★</div>
         <div>
-          <div class="title">Starry Dashboard</div>
-          <div class="subtitle">Ticket-System, Settings und Logs im Blick.</div>
+          <div class="name">Starry Control</div>
+          <div class="tag">Multi-Guild Dashboard</div>
         </div>
       </div>
-      <div class="status">
-        <span id="statusDot" class="dot"></span>
-        <span id="statusText">Nicht verbunden</span>
-      </div>
-    </header>
 
-    <section class="auth card">
-      <div class="auth-left">
-        <h2>Dashboard Zugang</h2>
-        <p class="muted">Token kommt aus <code>bot.dashboard.token</code> in der config.</p>
+      <div id="authPanel" class="auth-panel">
+        <button id="loginBtn" class="primary">Mit Discord einloggen</button>
+        <div class="muted">Adminrechte notwendig</div>
       </div>
-      <div class="auth-right">
-        <input id="token" type="password" placeholder="Bearer Token eingeben">
-        <button id="saveToken" class="primary">Speichern</button>
-        <button id="testToken">Testen</button>
-      </div>
-    </section>
 
-    <nav class="nav">
-      <button class="nav-btn active" data-tab="overview">Übersicht</button>
-      <button class="nav-btn" data-tab="tickets">Tickets</button>
-      <button class="nav-btn" data-tab="messaging">Nachrichten</button>
-      <button class="nav-btn" data-tab="moderation">Moderation</button>
-      <button class="nav-btn" data-tab="roles">Rollen</button>
-      <button class="nav-btn" data-tab="users">User</button>
-      <button class="nav-btn" data-tab="logs">Logs</button>
-      <button class="nav-btn" data-tab="applications">Bewerbungen</button>
-      <button class="nav-btn" data-tab="settings">Settings</button>
-    </nav>
-
-    <section id="tab-overview" class="panel active">
-      <div class="grid">
-        <div class="card">
-          <div class="card-head">
-            <h2>Übersicht</h2>
-            <div class="pill" id="lastSync">letzter Sync: –</div>
+      <div id="userPanel" class="user-panel hidden">
+        <div class="user">
+          <img id="userAvatar" alt="Avatar">
+          <div>
+            <div id="userName" class="user-name">–</div>
+            <div class="user-meta">Admin Zugriff</div>
           </div>
-          <div class="metrics">
-            <div class="metric">
-              <div class="label">Offen</div>
-              <div class="value" id="mOpen">–</div>
+        </div>
+        <button id="logoutBtn" class="ghost">Logout</button>
+      </div>
+
+      <div class="section-title">Guilds</div>
+      <div id="guildList" class="guild-list"></div>
+
+      <div class="section-title">Navigation</div>
+      <nav class="nav">
+        <button class="nav-btn active" data-view="overview">Overview</button>
+        <button class="nav-btn" data-view="tickets">Tickets</button>
+        <button class="nav-btn" data-view="messaging">Messaging</button>
+        <button class="nav-btn" data-view="moderation">Moderation</button>
+        <button class="nav-btn" data-view="roles">Roles</button>
+        <button class="nav-btn" data-view="users">Users</button>
+        <button class="nav-btn" data-view="applications">Applications</button>
+        <button class="nav-btn" data-view="logs">Logs</button>
+        <button class="nav-btn" data-view="settings">Settings</button>
+        <button class="nav-btn" data-view="birthdays">Birthdays</button>
+      </nav>
+    </aside>
+
+    <main class="main">
+      <section id="view-login" class="view">
+        <div class="hero">
+          <div>
+            <h1>Starry Control</h1>
+            <p>Ein Dashboard, das wirklich multi-guild kann. Admin-Login, modulare Settings und globale Statistiken.</p>
+            <button id="loginHero" class="primary">Discord Login</button>
+          </div>
+          <div class="hero-card">
+            <div class="hero-kpi">Global: Tickets, Giveaways, Polls, Applications</div>
+            <div class="hero-kpi">Guild-Scoped: Settings, Logs, Aktionen</div>
+            <div class="hero-kpi">Birthdays: Global sichtbar</div>
+          </div>
+        </div>
+      </section>
+
+      <section id="view-overview" class="view hidden">
+        <div class="header-row">
+          <div>
+            <h2>Overview</h2>
+            <p class="muted">Global und pro Guild auf einen Blick.</p>
+          </div>
+          <div class="badge" id="selectedGuildLabel">Keine Guild gewählt</div>
+        </div>
+
+        <div class="grid two">
+          <div class="card">
+            <div class="card-head">
+              <h3>Global Stats</h3>
+              <button id="refreshGlobal" class="ghost">Refresh</button>
             </div>
-            <div class="metric">
-              <div class="label">Geclaimed</div>
-              <div class="value" id="mClaimed">–</div>
+            <div class="metrics">
+              <div class="metric">
+                <div class="label">Tickets</div>
+                <div class="value" id="globalTickets">–</div>
+              </div>
+              <div class="metric">
+                <div class="label">Giveaways</div>
+                <div class="value" id="globalGiveaways">–</div>
+              </div>
+              <div class="metric">
+                <div class="label">Polls</div>
+                <div class="value" id="globalPolls">–</div>
+              </div>
+              <div class="metric">
+                <div class="label">Applications</div>
+                <div class="value" id="globalApps">–</div>
+              </div>
+              <div class="metric">
+                <div class="label">Birthdays</div>
+                <div class="value" id="globalBirthdays">–</div>
+              </div>
             </div>
-            <div class="metric">
-              <div class="label">Geschlossen</div>
-              <div class="value" id="mClosed">–</div>
+          </div>
+
+          <div class="card">
+            <div class="card-head">
+              <h3>Guild Stats</h3>
+              <button id="refreshGuild" class="ghost">Refresh</button>
             </div>
-            <div class="metric">
-              <div class="label">Gesamt</div>
-              <div class="value" id="mTotal">–</div>
+            <div class="metrics">
+              <div class="metric">
+                <div class="label">Tickets (open)</div>
+                <div class="value" id="guildTicketsOpen">–</div>
+              </div>
+              <div class="metric">
+                <div class="label">Tickets (total)</div>
+                <div class="value" id="guildTicketsTotal">–</div>
+              </div>
+              <div class="metric">
+                <div class="label">Giveaways</div>
+                <div class="value" id="guildGiveaways">–</div>
+              </div>
+              <div class="metric">
+                <div class="label">Polls</div>
+                <div class="value" id="guildPolls">–</div>
+              </div>
+              <div class="metric">
+                <div class="label">Applications</div>
+                <div class="value" id="guildApps">–</div>
+              </div>
             </div>
           </div>
         </div>
 
         <div class="card">
           <div class="card-head">
-            <h2>Snippets</h2>
-            <button id="snippetsReload">Aktualisieren</button>
+            <h3>Module Control</h3>
+            <div class="muted">Schnellzugriff auf alle Module (Overrides).</div>
           </div>
-          <div id="snippets" class="snippets"></div>
+          <div class="module-grid">
+            <div class="module">Tickets</div>
+            <div class="module">Giveaways</div>
+            <div class="module">Polls</div>
+            <div class="module">Applications</div>
+            <div class="module">User Stats</div>
+            <div class="module">Moderation</div>
+            <div class="module">Logs</div>
+            <div class="module">TempVoice</div>
+            <div class="module">Backups</div>
+          </div>
         </div>
-      </div>
-    </section>
+      </section>
 
-    <section id="tab-tickets" class="panel">
-      <div class="grid">
-        <div class="card">
-          <div class="card-head">
-            <h2>Tickets</h2>
-            <div class="tools">
-              <input id="ticketSearch" type="text" placeholder="Suche ID, User, Thread…">
-              <select id="ticketFilter">
-                <option value="all">Alle</option>
-                <option value="open">Offen</option>
-                <option value="claimed">Geclaimed</option>
-                <option value="closed">Geschlossen</option>
+      <section id="view-tickets" class="view hidden">
+        <div class="header-row">
+          <h2>Tickets</h2>
+          <button id="ticketsReload" class="ghost">Reload</button>
+        </div>
+        <div class="grid two">
+          <div class="card">
+            <div class="card-head">
+              <h3>Liste</h3>
+              <input id="ticketSearch" type="text" placeholder="Suche ID / User / Thread">
+            </div>
+            <div id="tickets" class="list"></div>
+          </div>
+          <div class="card">
+            <div class="card-head">
+              <h3>Aktionen</h3>
+            </div>
+            <div class="form-grid">
+              <input id="ticketThreadId" type="text" placeholder="Thread ID">
+              <input id="ticketActorId" type="text" placeholder="Staff User ID">
+              <input id="ticketUserId" type="text" placeholder="User ID (optional)">
+              <select id="ticketAction">
+                <option value="claim">Claim</option>
+                <option value="release">Release</option>
+                <option value="close">Close</option>
+                <option value="add_user">User hinzufügen</option>
               </select>
-              <button id="ticketsReload">Aktualisieren</button>
+              <input id="ticketReason" type="text" placeholder="Grund (optional)">
+              <button id="ticketActionBtn" class="primary">Ausführen</button>
             </div>
           </div>
-          <div id="tickets" class="tickets"></div>
         </div>
+      </section>
 
-        <div class="card">
-          <div class="card-head">
-            <h2>Ticket Aktionen</h2>
+      <section id="view-messaging" class="view hidden">
+        <div class="header-row">
+          <h2>Messaging</h2>
+        </div>
+        <div class="grid two">
+          <div class="card">
+            <div class="card-head"><h3>Message</h3></div>
+            <div class="form-grid">
+              <input id="msgChannelId" type="text" placeholder="Channel ID">
+              <textarea id="msgContent" placeholder="Nachricht"></textarea>
+              <button id="sendMessage" class="primary">Senden</button>
+            </div>
           </div>
-          <div class="form-grid">
-            <input id="ticketThreadId" type="text" placeholder="Thread ID">
-            <input id="ticketActorId" type="text" placeholder="Staff User ID">
-            <input id="ticketUserId" type="text" placeholder="User ID (optional)">
-            <select id="ticketAction">
-              <option value="claim">Claim</option>
-              <option value="release">Release</option>
-              <option value="close">Close</option>
-              <option value="add_user">User hinzufügen</option>
-            </select>
-            <input id="ticketReason" type="text" placeholder="Grund (optional)">
-            <button id="ticketActionBtn" class="primary">Ausführen</button>
+          <div class="card">
+            <div class="card-head"><h3>Embed</h3></div>
+            <div class="form-grid">
+              <input id="embedChannelId" type="text" placeholder="Channel ID">
+              <input id="embedTitle" type="text" placeholder="Titel">
+              <textarea id="embedDesc" placeholder="Beschreibung"></textarea>
+              <textarea id="embedFields" placeholder="Fields (name|value|inline pro Zeile)"></textarea>
+              <input id="embedThumbnail" type="text" placeholder="Thumbnail URL (optional)">
+              <input id="embedImage" type="text" placeholder="Image URL (optional)">
+              <input id="embedFooter" type="text" placeholder="Footer (optional)">
+              <input id="embedColor" type="text" placeholder="Farbe (hex, optional)">
+              <button id="sendEmbed" class="primary">Senden</button>
+            </div>
           </div>
         </div>
-      </div>
-    </section>
+      </section>
 
-    <section id="tab-messaging" class="panel">
-      <div class="grid">
-        <div class="card">
-          <div class="card-head">
-            <h2>Nachricht senden</h2>
+      <section id="view-moderation" class="view hidden">
+        <div class="header-row"><h2>Moderation</h2></div>
+        <div class="grid two">
+          <div class="card">
+            <div class="card-head"><h3>Timeout</h3></div>
+            <div class="form-grid">
+              <input id="timeoutUserId" type="text" placeholder="User ID">
+              <input id="timeoutModeratorId" type="text" placeholder="Moderator ID (optional)">
+              <input id="timeoutMinutes" type="number" placeholder="Minuten">
+              <input id="timeoutReason" type="text" placeholder="Grund (optional)">
+              <button id="timeoutBtn" class="primary">Timeout</button>
+            </div>
           </div>
-          <div class="form-grid">
-            <input id="msgChannelId" type="text" placeholder="Channel ID">
-            <textarea id="msgContent" placeholder="Nachricht"></textarea>
-            <button id="sendMessage" class="primary">Senden</button>
-          </div>
-        </div>
-
-        <div class="card">
-          <div class="card-head">
-            <h2>Embed senden</h2>
-          </div>
-          <div class="form-grid">
-            <input id="embedChannelId" type="text" placeholder="Channel ID">
-            <input id="embedTitle" type="text" placeholder="Titel">
-            <textarea id="embedDesc" placeholder="Beschreibung"></textarea>
-            <textarea id="embedFields" placeholder="Fields (pro Zeile: name|value|inline)"></textarea>
-            <input id="embedThumbnail" type="text" placeholder="Thumbnail URL (optional)">
-            <input id="embedImage" type="text" placeholder="Image URL (optional)">
-            <input id="embedFooter" type="text" placeholder="Footer (optional)">
-            <input id="embedColor" type="text" placeholder="Farbe (hex, optional)">
-            <button id="sendEmbed" class="primary">Senden</button>
-          </div>
-        </div>
-      </div>
-    </section>
-
-    <section id="tab-moderation" class="panel">
-      <div class="grid">
-        <div class="card">
-          <div class="card-head">
-            <h2>Timeout</h2>
-          </div>
-          <div class="form-grid">
-            <input id="timeoutUserId" type="text" placeholder="User ID">
-            <input id="timeoutModeratorId" type="text" placeholder="Moderator ID (optional)">
-            <input id="timeoutMinutes" type="number" placeholder="Minuten">
-            <input id="timeoutReason" type="text" placeholder="Grund (optional)">
-            <button id="timeoutBtn" class="primary">Timeout</button>
+          <div class="card">
+            <div class="card-head"><h3>Kick / Ban</h3></div>
+            <div class="form-grid">
+              <input id="kickUserId" type="text" placeholder="User ID">
+              <input id="kickModeratorId" type="text" placeholder="Moderator ID (optional)">
+              <input id="kickReason" type="text" placeholder="Grund (optional)">
+              <button id="kickBtn">Kick</button>
+              <input id="banUserId" type="text" placeholder="User ID">
+              <input id="banModeratorId" type="text" placeholder="Moderator ID (optional)">
+              <input id="banDays" type="number" placeholder="Delete Days (0-7)">
+              <input id="banReason" type="text" placeholder="Grund (optional)">
+              <button id="banBtn" class="primary">Ban</button>
+            </div>
           </div>
         </div>
         <div class="card">
-          <div class="card-head">
-            <h2>Kick / Ban</h2>
-          </div>
-          <div class="form-grid">
-            <input id="kickUserId" type="text" placeholder="User ID">
-            <input id="kickModeratorId" type="text" placeholder="Moderator ID (optional)">
-            <input id="kickReason" type="text" placeholder="Grund (optional)">
-            <button id="kickBtn">Kick</button>
-            <input id="banUserId" type="text" placeholder="User ID">
-            <input id="banModeratorId" type="text" placeholder="Moderator ID (optional)">
-            <input id="banDays" type="number" placeholder="Delete Days (0-7)">
-            <input id="banReason" type="text" placeholder="Grund (optional)">
-            <button id="banBtn" class="primary">Ban</button>
-          </div>
-        </div>
-      </div>
-      <div class="grid">
-        <div class="card">
-          <div class="card-head">
-            <h2>Purge</h2>
-          </div>
+          <div class="card-head"><h3>Purge</h3></div>
           <div class="form-grid">
             <input id="purgeChannelId" type="text" placeholder="Channel ID">
             <input id="purgeModeratorId" type="text" placeholder="Moderator ID (optional)">
@@ -204,117 +264,126 @@
             <button id="purgeBtn" class="primary">Purge</button>
           </div>
         </div>
-      </div>
-    </section>
+      </section>
 
-    <section id="tab-roles" class="panel">
-      <div class="grid">
-        <div class="card">
-          <div class="card-head">
-            <h2>Rolle hinzufügen</h2>
-          </div>
-          <div class="form-grid">
-            <input id="roleAddUserId" type="text" placeholder="User ID">
-            <input id="roleAddRoleId" type="text" placeholder="Role ID">
-            <button id="roleAddBtn" class="primary">Hinzufügen</button>
-          </div>
-        </div>
-        <div class="card">
-          <div class="card-head">
-            <h2>Rolle entfernen</h2>
-          </div>
-          <div class="form-grid">
-            <input id="roleRemoveUserId" type="text" placeholder="User ID">
-            <input id="roleRemoveRoleId" type="text" placeholder="Role ID">
-            <button id="roleRemoveBtn">Entfernen</button>
-          </div>
-        </div>
-      </div>
-    </section>
-
-    <section id="tab-users" class="panel">
-      <div class="grid">
-        <div class="card">
-          <div class="card-head">
-            <h2>User Suche</h2>
-          </div>
-          <div class="form-grid">
-            <input id="userSearchInput" type="text" placeholder="User ID oder Name">
-            <button id="userSearchBtn" class="primary">Suchen</button>
-          </div>
-          <div id="userSearchResults" class="list"></div>
-        </div>
-        <div class="card">
-          <div class="card-head">
-            <h2>Live User</h2>
-            <button id="userLiveReload">Aktualisieren</button>
-          </div>
-          <div id="userLive" class="list"></div>
-        </div>
-      </div>
-    </section>
-
-    <section id="tab-logs" class="panel">
-      <div class="grid">
-        <div class="card">
-          <div class="card-head">
-            <h2>Logs</h2>
-            <div class="tools">
-              <button id="logsReload">Aktualisieren</button>
-              <button id="logsLive">Live verbinden</button>
+      <section id="view-roles" class="view hidden">
+        <div class="header-row"><h2>Roles</h2></div>
+        <div class="grid two">
+          <div class="card">
+            <div class="card-head"><h3>Rolle hinzufügen</h3></div>
+            <div class="form-grid">
+              <input id="roleAddUserId" type="text" placeholder="User ID">
+              <input id="roleAddRoleId" type="text" placeholder="Role ID">
+              <button id="roleAddBtn" class="primary">Hinzufügen</button>
             </div>
           </div>
-          <div id="logs" class="list"></div>
-        </div>
-        <div class="card">
-          <div class="card-head">
-            <h2>Live Status</h2>
-          </div>
-          <div class="list-item" id="logsLiveStatus">Nicht verbunden</div>
-        </div>
-      </div>
-    </section>
-
-    <section id="tab-applications" class="panel">
-      <div class="grid">
-        <div class="card">
-          <div class="card-head">
-            <h2>Bewerbungen (Konfiguration)</h2>
-            <div class="tools">
-              <button id="appsReload">Laden</button>
-              <button id="appsApply" class="primary">Anwenden</button>
+          <div class="card">
+            <div class="card-head"><h3>Rolle entfernen</h3></div>
+            <div class="form-grid">
+              <input id="roleRemoveUserId" type="text" placeholder="User ID">
+              <input id="roleRemoveRoleId" type="text" placeholder="Role ID">
+              <button id="roleRemoveBtn">Entfernen</button>
             </div>
           </div>
-          <p class="muted">Hier kannst du Fragen und Ziele konfigurieren (JSON).</p>
-          <textarea id="applications"></textarea>
         </div>
+      </section>
+
+      <section id="view-users" class="view hidden">
+        <div class="header-row"><h2>Users</h2></div>
+        <div class="grid two">
+          <div class="card">
+            <div class="card-head">
+              <h3>User Suche</h3>
+            </div>
+            <div class="form-grid">
+              <input id="userSearchInput" type="text" placeholder="User ID oder Name">
+              <button id="userSearchBtn" class="primary">Suchen</button>
+            </div>
+            <div id="userSearchResults" class="list"></div>
+          </div>
+          <div class="card">
+            <div class="card-head">
+              <h3>Live User</h3>
+              <button id="userLiveReload" class="ghost">Aktualisieren</button>
+            </div>
+            <div id="userLive" class="list"></div>
+          </div>
+        </div>
+      </section>
+
+      <section id="view-applications" class="view hidden">
+        <div class="header-row"><h2>Applications</h2></div>
+        <div class="grid two">
+          <div class="card">
+            <div class="card-head">
+              <h3>Konfiguration</h3>
+              <div class="tools">
+                <button id="appsReload" class="ghost">Laden</button>
+                <button id="appsApply" class="primary">Anwenden</button>
+              </div>
+            </div>
+            <textarea id="applications"></textarea>
+          </div>
+          <div class="card">
+            <div class="card-head">
+              <h3>Neueste Bewerbungen</h3>
+              <button id="appsListReload" class="ghost">Aktualisieren</button>
+            </div>
+            <div id="applicationsList" class="list"></div>
+          </div>
+        </div>
+      </section>
+
+      <section id="view-logs" class="view hidden">
+        <div class="header-row"><h2>Logs</h2></div>
+        <div class="grid two">
+          <div class="card">
+            <div class="card-head">
+              <h3>Event Logs</h3>
+              <div class="tools">
+                <button id="logsReload" class="ghost">Aktualisieren</button>
+                <button id="logsLive" class="ghost">Live verbinden</button>
+              </div>
+            </div>
+            <div id="logs" class="list"></div>
+          </div>
+          <div class="card">
+            <div class="card-head"><h3>Live Status</h3></div>
+            <div class="list-item" id="logsLiveStatus">Nicht verbunden</div>
+          </div>
+        </div>
+      </section>
+
+      <section id="view-settings" class="view hidden">
+        <div class="header-row"><h2>Settings</h2></div>
         <div class="card">
           <div class="card-head">
-            <h2>Neueste Bewerbungen</h2>
-            <button id="appsListReload">Aktualisieren</button>
+            <h3>Guild Overrides</h3>
+            <div class="tools">
+              <button id="prettify" class="ghost">Formatieren</button>
+              <button id="reload" class="ghost">Laden</button>
+              <button id="apply" class="primary">Anwenden</button>
+            </div>
           </div>
-          <div id="applicationsList" class="list"></div>
+          <textarea id="settings"></textarea>
         </div>
-      </div>
-    </section>
+      </section>
 
-    <section id="tab-settings" class="panel">
-      <div class="card">
-        <div class="card-head">
-          <h2>Settings (Overrides)</h2>
-          <div class="tools">
-            <button id="prettify">Formatieren</button>
-            <button id="reload">Laden</button>
-            <button class="primary" id="apply">Anwenden</button>
+      <section id="view-birthdays" class="view hidden">
+        <div class="header-row"><h2>Birthdays (Global)</h2></div>
+        <div class="card">
+          <div class="card-head">
+            <h3>Liste</h3>
+            <button id="birthdaysReload" class="ghost">Aktualisieren</button>
           </div>
+          <div id="birthdays" class="list"></div>
         </div>
-        <p class="muted">Diese Werte überschreiben config.yml und wirken ohne Bot-Neustart.</p>
-        <textarea id="settings"></textarea>
-      </div>
-    </section>
+      </section>
+
+      <div id="toast" class="toast"></div>
+    </main>
   </div>
 
-  <div id="toast" class="toast"></div>
   <script src="/static/app.js"></script>
 </body>
 </html>

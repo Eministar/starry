@@ -86,6 +86,48 @@ class ApplicationService:
             pass
 
 
+    async def start_application(self, interaction: discord.Interaction, answers: list[str]):
+        if not interaction.guild or not interaction.user:
+            return False, "guild_only"
+
+        cfg = self._config()
+        enabled = bool(cfg.get("enabled", True))
+        if not enabled:
+            return False, "disabled"
+
+        forum_id = int(cfg.get("forum_channel_id", 0) or 0)
+        if not forum_id:
+            return False, "forum_missing"
+
+        guild = interaction.guild
+        forum = guild.get_channel(forum_id)
+        if not isinstance(forum, discord.ForumChannel):
+            try:
+                fetched = await self.bot.fetch_channel(int(forum_id))
+                forum = fetched if isinstance(fetched, discord.ForumChannel) else None
+            except Exception:
+                forum = None
+        if not isinstance(forum, discord.ForumChannel):
+            return False, "forum_invalid"
+
+        questions = self._questions()
+        embed = build_application_embed(self.settings, guild, interaction.user, questions, answers)
+        mention_role_id = int(cfg.get("ping_role_id", 0) or 0)
+        mention = f"<@&{mention_role_id}>" if mention_role_id else ""
+        title = f"Bewerbung von {interaction.user.display_name}"
+
+        created = await forum.create_thread(name=title[:100], content=mention or None, embeds=[embed])
+        thread = created.thread
+
+        app_id = await self.db.create_application(guild.id, interaction.user.id, thread.id, questions, answers)
+        await self.logger.emit(
+            self.bot,
+            "application_created",
+            {"application_id": int(app_id), "user_id": int(interaction.user.id), "thread_id": int(thread.id)},
+        )
+        return True, None
+
+
 class _FakeInteraction:
     def __init__(self, guild: discord.Guild, user: discord.User):
         self.guild = guild

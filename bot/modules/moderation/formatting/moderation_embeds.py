@@ -14,12 +14,19 @@ def parse_hex_color(value: str | None, default: int = 0xB16B91) -> int:
         return default
 
 
-def _color(settings) -> int:
-    return parse_hex_color(settings.get("design.accent_color", "#B16B91"), 0xB16B91)
+def _color(settings, guild: discord.Guild | None) -> int:
+    if guild:
+        value = settings.get_guild(guild.id, "design.accent_color", "#B16B91")
+    else:
+        value = settings.get("design.accent_color", "#B16B91")
+    return parse_hex_color(value, 0xB16B91)
 
 
-def _footer(emb: discord.Embed, settings):
-    ft = settings.get("design.footer_text", None)
+def _footer(emb: discord.Embed, settings, guild: discord.Guild | None):
+    if guild:
+        ft = settings.get_guild(guild.id, "design.footer_text", None)
+    else:
+        ft = settings.get("design.footer_text", None)
     if ft:
         emb.set_footer(text=str(ft))
 
@@ -54,9 +61,9 @@ def build_timeout_embed(
         f"┗`📝` - Grund: {_cut(reason, 900) if reason else '—'}"
     )
 
-    emb = discord.Embed(title=f"{orange} 𑁉 TIMEOUT", description=desc, color=_color(settings))
+    emb = discord.Embed(title=f"{orange} 𑁉 TIMEOUT", description=desc, color=_color(settings, guild))
     emb.set_author(name=moderator.display_name, icon_url=moderator.display_avatar.url)
-    _footer(emb, settings)
+    _footer(emb, settings, guild)
     return emb
 
 
@@ -81,9 +88,9 @@ def build_warn_embed(
         f"┗`📝` - Grund: {_cut(reason, 900) if reason else '—'}"
     )
 
-    emb = discord.Embed(title=f"{info} 𑁉 WARNUNG", description=desc, color=_color(settings))
+    emb = discord.Embed(title=f"{info} 𑁉 WARNUNG", description=desc, color=_color(settings, guild))
     emb.set_author(name=moderator.display_name, icon_url=moderator.display_avatar.url)
-    _footer(emb, settings)
+    _footer(emb, settings, guild)
     return emb
 
 
@@ -106,9 +113,9 @@ def build_kick_embed(
         f"┗`📝` - Grund: {_cut(reason, 900) if reason else '—'}"
     )
 
-    emb = discord.Embed(title=f"{red} 𑁉 KICK", description=desc, color=_color(settings))
+    emb = discord.Embed(title=f"{red} 𑁉 KICK", description=desc, color=_color(settings, guild))
     emb.set_author(name=moderator.display_name, icon_url=moderator.display_avatar.url)
-    _footer(emb, settings)
+    _footer(emb, settings, guild)
     return emb
 
 
@@ -136,9 +143,9 @@ def build_ban_embed(
         f"┗`📝` - Grund: {_cut(reason, 900) if reason else '—'}"
     )
 
-    emb = discord.Embed(title=f"{red} 𑁉 BAN", description=desc, color=_color(settings))
+    emb = discord.Embed(title=f"{red} 𑁉 BAN", description=desc, color=_color(settings, guild))
     emb.set_author(name=moderator.display_name, icon_url=moderator.display_avatar.url)
-    _footer(emb, settings)
+    _footer(emb, settings, guild)
     return emb
 
 
@@ -166,7 +173,7 @@ def build_purge_embed(
         f"┗`✅` - Deleted: **{int(deleted)}**"
     )
 
-    emb = discord.Embed(title=f"{broom} 𑁉 PURGE", description=desc, color=_color(settings))
+    emb = discord.Embed(title=f"{broom} 𑁉 PURGE", description=desc, color=_color(settings, guild))
     emb.set_author(name=moderator.display_name, icon_url=moderator.display_avatar.url)
-    _footer(emb, settings)
+    _footer(emb, settings, guild)
     return emb

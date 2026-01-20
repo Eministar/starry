@@ -9,16 +9,16 @@ class GiveawayCommands(commands.Cog):
         self.bot = bot
         self.service = getattr(bot, "giveaway_service", None) or GiveawayService(bot, bot.settings, bot.db, bot.logger)
 
-    giveaway = app_commands.Group(name="giveaway", description="Giveaway Tools")
+    giveaway = app_commands.Group(name="giveaway", description="🎁 𑁉 Giveaway-Tools")
 
-    @giveaway.command(name="create", description="Giveaway erstellen")
+    @giveaway.command(name="create", description="🎉 𑁉 Giveaway erstellen")
     @app_commands.describe(channel="Zielkanal", winners="Anzahl Gewinner")
     async def create(self, interaction: discord.Interaction, channel: discord.TextChannel, winners: int):
         if not interaction.guild:
             return await interaction.response.send_message("Nur im Server nutzbar.", ephemeral=True)
         await interaction.response.send_modal(GiveawayCreateModal(self.service, channel.id, int(winners)))
 
-    @giveaway.command(name="reroll", description="Giveaway neu auslosen")
+    @giveaway.command(name="reroll", description="🔁 𑁉 Gewinner neu auslosen")
     @app_commands.describe(giveaway_id="Giveaway ID")
     async def reroll(self, interaction: discord.Interaction, giveaway_id: int):
         if not interaction.guild:
@@ -226,4 +226,3 @@ def _parse_roles(text: str | None) -> tuple[int, int, int, int]:
         if p.startswith("account:"):
             min_account_days = _to_int(p.replace("account:", "").strip())
     return required_id, excluded_id, min_tickets, min_account_days
-

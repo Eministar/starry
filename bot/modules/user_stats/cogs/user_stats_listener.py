@@ -10,24 +10,26 @@ class UserStatsListener(commands.Cog):
 
     @commands.Cog.listener()
     async def on_message(self, message: discord.Message):
-        if not self.bot.settings.get_bool("user_stats.enabled", True):
+        if not message.guild:
+            return
+        if not self.bot.settings.get_guild_bool(message.guild.id, "user_stats.enabled", True):
             return
         await self.service.on_message(message)
 
     @commands.Cog.listener()
     async def on_presence_update(self, before: discord.Member, after: discord.Member):
-        if not self.bot.settings.get_bool("user_stats.enabled", True):
+        if not self.bot.settings.get_guild_bool(after.guild.id, "user_stats.enabled", True):
             return
         await self.service.on_presence_update(before, after)
 
     @commands.Cog.listener()
     async def on_member_update(self, before: discord.Member, after: discord.Member):
-        if not self.bot.settings.get_bool("user_stats.enabled", True):
+        if not self.bot.settings.get_guild_bool(after.guild.id, "user_stats.enabled", True):
             return
         await self.service.on_member_update(before, after)
 
     @commands.Cog.listener()
     async def on_voice_state_update(self, member: discord.Member, before: discord.VoiceState, after: discord.VoiceState):
-        if not self.bot.settings.get_bool("user_stats.enabled", True):
+        if not self.bot.settings.get_guild_bool(member.guild.id, "user_stats.enabled", True):
             return
         await self.service.on_voice_state_update(member, before, after)

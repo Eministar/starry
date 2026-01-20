@@ -46,7 +46,10 @@ def _default_snippets(settings, guild) -> dict:
 
 
 def _load_snippets(settings, guild) -> dict:
-    data = settings.get("ticket.snippets", {}) or {}
+    if guild:
+        data = settings.get_guild(guild.id, "ticket.snippets", {}) or {}
+    else:
+        data = settings.get("ticket.snippets", {}) or {}
     if isinstance(data, dict) and data:
         return data
     return _default_snippets(settings, guild)
@@ -57,9 +60,9 @@ class TextSnippetsCommands(commands.Cog):
         self.bot = bot
         self.service = getattr(bot, "ticket_service", None) or TicketService(bot, bot.settings, bot.db, bot.logger)
 
-    snippets = app_commands.Group(name="text-snippets", description="Vorgefertigte Nachrichten")
+    snippets = app_commands.Group(name="text-snippets", description="📝 𑁉 Vorgefertigte Nachrichten")
 
-    @snippets.command(name="list", description="Liste aller Snippets anzeigen")
+    @snippets.command(name="list", description="📋 𑁉 Snippets anzeigen")
     async def list_snippets(self, interaction: discord.Interaction):
         if not interaction.guild or not isinstance(interaction.user, discord.Member):
             return await interaction.response.send_message("Nur im Server nutzbar.", ephemeral=True)
@@ -75,7 +78,7 @@ class TextSnippetsCommands(commands.Cog):
         emb = build_snippet_list_embed(self.bot.settings, interaction.guild, items)
         await interaction.response.send_message(embed=emb, ephemeral=True)
 
-    @snippets.command(name="send", description="Snippet im Ticket senden")
+    @snippets.command(name="send", description="✉️ 𑁉 Snippet im Ticket senden")
     @app_commands.describe(key="Key des Snippets")
     async def send_snippet(self, interaction: discord.Interaction, key: str):
         if not interaction.guild or not isinstance(interaction.user, discord.Member):
@@ -87,7 +90,7 @@ class TextSnippetsCommands(commands.Cog):
         if not thread:
             return await interaction.response.send_message("Nur im Ticket-Thread.", ephemeral=True)
 
-        forum_id = self.bot.settings.get_int("bot.forum_channel_id")
+        forum_id = self.bot.settings.get_guild_int(interaction.guild.id, "bot.forum_channel_id")
         parent = getattr(thread, "parent", None)
         if not parent or getattr(parent, "id", 0) != forum_id:
             return await interaction.response.send_message("Nur im Ticket-Thread.", ephemeral=True)

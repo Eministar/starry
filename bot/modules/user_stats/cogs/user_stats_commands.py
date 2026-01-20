@@ -9,21 +9,21 @@ class UserStatsCommands(commands.Cog):
         self.bot = bot
         self.service = getattr(bot, "user_stats_service", None) or UserStatsService(bot, bot.settings, bot.db, bot.logger)
 
-    @app_commands.command(name="me", description="Zeigt deine User-Statistiken")
+    @app_commands.command(name="me", description="📊 𑁉 Deine User-Statistiken")
     async def me(self, interaction: discord.Interaction):
         if not interaction.guild or not isinstance(interaction.user, discord.Member):
             return await interaction.response.send_message("Nur im Server nutzbar.", ephemeral=True)
         emb = await self.service.build_me_embed(interaction.user)
         await interaction.response.send_message(embed=emb, ephemeral=True)
 
-    @app_commands.command(name="ich", description="Zeigt deine User-Statistiken")
+    @app_commands.command(name="ich", description="📊 𑁉 Deine User-Statistiken")
     async def ich(self, interaction: discord.Interaction):
         if not interaction.guild or not isinstance(interaction.user, discord.Member):
             return await interaction.response.send_message("Nur im Server nutzbar.", ephemeral=True)
         emb = await self.service.build_me_embed(interaction.user)
         await interaction.response.send_message(embed=emb, ephemeral=True)
 
-    @app_commands.command(name="erfolge", description="Zeigt deine Erfolge")
+    @app_commands.command(name="erfolge", description="🏆 𑁉 Deine Erfolge")
     async def erfolge(self, interaction: discord.Interaction):
         if not interaction.guild or not isinstance(interaction.user, discord.Member):
             return await interaction.response.send_message("Nur im Server nutzbar.", ephemeral=True)

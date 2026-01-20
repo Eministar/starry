@@ -9,23 +9,23 @@ class BirthdayCommands(commands.Cog):
         self.bot = bot
         self.service = getattr(bot, "birthday_service", None) or BirthdayService(bot, bot.settings, bot.db, bot.logger)
 
-    birthday = app_commands.Group(name="birthday", description="Geburtstage verwalten")
+    birthday = app_commands.Group(name="birthday", description="🎂 𑁉 Geburtstage verwalten")
 
-    @birthday.command(name="set", description="Geburtstag setzen")
+    @birthday.command(name="set", description="🎂 𑁉 Geburtstag setzen")
     @app_commands.describe(day="Tag", month="Monat", year="Jahr")
     async def set_birthday(self, interaction: discord.Interaction, day: int, month: int, year: int):
         await self.service.set_birthday(interaction, day, month, year)
 
-    @birthday.command(name="remove", description="Geburtstag entfernen")
+    @birthday.command(name="remove", description="🗑️ 𑁉 Geburtstag entfernen")
     async def remove_birthday(self, interaction: discord.Interaction):
         await self.service.remove_birthday(interaction)
 
-    @birthday.command(name="show", description="Geburtstag anzeigen")
+    @birthday.command(name="show", description="🔎 𑁉 Geburtstag anzeigen")
     @app_commands.describe(user="Optionaler User")
     async def show_birthday(self, interaction: discord.Interaction, user: discord.Member | None = None):
         await self.service.show_birthday(interaction, user=user)
 
-    @birthday.command(name="list", description="Geburtstagsliste anzeigen")
+    @birthday.command(name="list", description="📅 𑁉 Geburtstagsliste anzeigen")
     async def list_birthdays(self, interaction: discord.Interaction):
         if not interaction.guild:
             return await interaction.response.send_message("Nur im Server nutzbar.", ephemeral=True)

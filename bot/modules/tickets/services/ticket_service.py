@@ -64,8 +64,11 @@ def _parse_iso(ts: str | None) -> datetime | None:
         return None
 
 
-def parse_int_color(settings) -> int:
-    v = str(settings.get("design.accent_color", "#B16B91") or "").replace("#", "").strip()
+def parse_int_color(settings, guild_id: int | None = None) -> int:
+    if guild_id:
+        v = str(settings.get_guild(int(guild_id), "design.accent_color", "#B16B91") or "").replace("#", "").strip()
+    else:
+        v = str(settings.get("design.accent_color", "#B16B91") or "").replace("#", "").strip()
     try:
         return int(v, 16)
     except Exception:
@@ -243,6 +246,15 @@ class TicketService:
         self.db = db
         self.logger = logger
 
+    def _g(self, guild_id: int, key: str, default=None):
+        return self.settings.get_guild(int(guild_id), key, default)
+
+    def _gi(self, guild_id: int, key: str, default: int = 0) -> int:
+        return self.settings.get_guild_int(int(guild_id), key, default)
+
+    def _gb(self, guild_id: int, key: str, default: bool = False) -> bool:
+        return self.settings.get_guild_bool(int(guild_id), key, default)
+
     def _priority_label(self, priority: int | None) -> str:
         mapping = {
             1: "Niedrig",
@@ -253,7 +265,7 @@ class TicketService:
         return mapping.get(int(priority or 2), "Normal")
 
     async def _get_ticket_log_channel(self, guild: discord.Guild | None):
-        log_id = self.settings.get_int("ticket.log_channel_id")
+        log_id = self._gi(guild.id, "ticket.log_channel_id") if guild else 0
         if not log_id:
             return None
         ch = guild.get_channel(log_id) if guild else None
@@ -286,7 +298,8 @@ class TicketService:
 
     async def _notify_user_update(self, guild: discord.Guild | None, t: dict, title: str, text: str):
         try:
-            if not self.settings.get_bool("ticket.notify_user_on_updates", True):
+            gid = guild.id if guild else 0
+            if not self._gb(gid, "ticket.notify_user_on_updates", True):
                 return False, "disabled"
             uid = int(t["user_id"]) if t and t.get("user_id") else 0
             if not uid:
@@ -311,7 +324,8 @@ class TicketService:
         role_name: str,
         reason: str | None,
     ):
-        if not self.settings.get_bool("ticket.notify_user_on_updates", True):
+        gid = guild.id if guild else 0
+        if not self._gb(gid, "ticket.notify_user_on_updates", True):
             return False, "disabled"
         uid = int(t["user_id"]) if t and t.get("user_id") else 0
         if not uid:
@@ -345,7 +359,7 @@ class TicketService:
         if not thread:
             return None, None, "Nur im Ticket-Thread."
 
-        forum_id = self.settings.get_int("bot.forum_channel_id")
+        forum_id = self._gi(interaction.guild.id, "bot.forum_channel_id")
         parent = getattr(thread, "parent", None)
         if not parent or getattr(parent, "id", 0) != forum_id:
             return None, None, "Nur im Ticket-Thread."
@@ -400,8 +414,8 @@ class TicketService:
         except Exception as e:
             return False, f"{type(e).__name__}: {e}"
 
-        color = parse_int_color(self.settings)
-        ft = self.settings.get("design.footer_text", None)
+        color = parse_int_color(self.settings, guild.id)
+        ft = self._g(guild.id, "design.footer_text", None)
 
         arrow2 = em(self.settings, "arrow2", guild) or "➜"
 
@@ -431,6 +445,16 @@ class TicketService:
         except Exception as e:
             return False, f"{type(e).__name__}: {e}"
 
+    def _dm_candidate_guilds(self, user_id: int) -> list[discord.Guild]:
+        candidates = []
+        for guild in list(self.bot.guilds):
+            if not guild.get_member(int(user_id)):
+                continue
+            forum_id = self._gi(guild.id, "bot.forum_channel_id")
+            if forum_id:
+                candidates.append(guild)
+        return candidates
+
     async def handle_dm(self, message: discord.Message):
         if message.author.bot:
             return
@@ -440,29 +464,28 @@ class TicketService:
         except Exception:
             pass
 
-        guild_id = self.settings.get_int("bot.guild_id")
-        forum_id = self.settings.get_int("bot.forum_channel_id")
-        if not guild_id or not forum_id:
+        candidates = self._dm_candidate_guilds(message.author.id)
+        if not candidates:
             try:
-                await message.author.send("Ticket-System ist aktuell nicht konfiguriert.")
+                await message.author.send("Kein Ticket-System gefunden. Bitte nutze ein Server-Kommando.")
+            except Exception:
+                pass
+            return
+        if len(candidates) > 1:
+            names = ", ".join([g.name for g in candidates[:5]])
+            hint = "Bitte nutze ein Ticket-Kommando im Ziel-Server."
+            if names:
+                hint = f"Mehrere Server gefunden ({names}). Bitte nutze ein Ticket-Kommando im Ziel-Server."
+            try:
+                await message.author.send(hint)
             except Exception:
                 pass
             return
 
-        guild = self.bot.get_guild(guild_id)
-        if not guild:
-            try:
-                guild = await self.bot.fetch_guild(int(guild_id))
-            except Exception:
-                guild = None
-        if not guild:
-            try:
-                await message.author.send("Server nicht gefunden. Bitte melde dich beim Team.")
-            except Exception:
-                pass
-            return
+        guild = candidates[0]
+        guild_id = guild.id
 
-        allow_multi = self.settings.get_bool("ticket.allow_multiple_open_tickets_per_user", False)
+        allow_multi = self._gb(guild_id, "ticket.allow_multiple_open_tickets_per_user", False)
         existing_row = await self.db.get_open_ticket_by_user(guild_id, message.author.id)
         existing = _normalize_open_ticket_row(existing_row)
         if not existing:
@@ -497,11 +520,11 @@ class TicketService:
                 )
                 return
 
-        category_key = self.settings.get("ticket.default_category", "allgemeine_frage")
+        category_key = self._g(guild_id, "ticket.default_category", "allgemeine_frage")
         await self._create_ticket(guild, message, str(category_key))
 
     async def _create_ticket(self, guild: discord.Guild, dm_message: discord.Message, category_key: str):
-        forum_id = self.settings.get_int("bot.forum_channel_id")
+        forum_id = self._gi(guild.id, "bot.forum_channel_id")
         forum = guild.get_channel(forum_id)
         if not isinstance(forum, discord.ForumChannel):
             try:
@@ -520,7 +543,7 @@ class TicketService:
         member = guild.get_member(user.id)
         total = await self.db.get_ticket_count(user.id)
 
-        cat_cfg = (self.settings.get("categories", {}) or {}).get(category_key, {}) or {}
+        cat_cfg = (self._g(guild.id, "categories", {}) or {}).get(category_key, {}) or {}
         cat_label = str(cat_cfg.get("label", category_key)).upper()
         prefix = str(cat_cfg.get("thread_prefix", "🚑 •")).strip() or "🚑 •"
         if prefix == "•":
@@ -535,7 +558,7 @@ class TicketService:
 
         created_at = datetime.now(timezone.utc)
 
-        support_role_id = self.settings.get_int("bot.support_role_id")
+        support_role_id = self._gi(guild.id, "bot.support_role_id")
         role_mention = f"<@&{support_role_id}>" if support_role_id else ""
 
         content_head = f"User-ID: {user.id}\n{role_mention}".strip()
@@ -628,9 +651,6 @@ class TicketService:
         if not message.guild or not isinstance(message.author, discord.Member):
             return
 
-        guild_id = self.settings.get_int("bot.guild_id")
-        if not guild_id or message.guild.id != guild_id:
-            return
 
         if not is_staff(self.settings, message.author):
             return
@@ -638,7 +658,7 @@ class TicketService:
         if not isinstance(message.channel, discord.Thread):
             return
 
-        forum_id = self.settings.get_int("bot.forum_channel_id")
+        forum_id = self._gi(message.guild.id, "bot.forum_channel_id")
         parent = getattr(message.channel, "parent", None)
         if not parent or getattr(parent, "id", 0) != forum_id:
             return
@@ -652,7 +672,7 @@ class TicketService:
             return
 
         text = (message.content or "").strip()
-        if self.settings.get_bool("ticket.mirror_staff_attachments", True) and message.attachments:
+        if self._gb(message.guild.id, "ticket.mirror_staff_attachments", True) and message.attachments:
             links = "\n".join([a.url for a in message.attachments][:8])
             if links:
                 text = (text + "\n\n" + links).strip()
@@ -704,7 +724,7 @@ class TicketService:
         if not thread:
             return await _ephemeral(interaction, "Nur im Ticket-Thread.")
 
-        forum_id = self.settings.get_int("bot.forum_channel_id")
+        forum_id = self._gi(message.guild.id, "bot.forum_channel_id")
         parent = getattr(thread, "parent", None)
         if not parent or getattr(parent, "id", 0) != forum_id:
             return await _ephemeral(interaction, "Nur im Ticket-Thread.")
@@ -797,7 +817,7 @@ class TicketService:
         if not thread:
             return await _ephemeral(interaction, "Nur im Ticket-Thread.")
 
-        forum_id = self.settings.get_int("bot.forum_channel_id")
+        forum_id = self._gi(message.guild.id, "bot.forum_channel_id")
         parent = getattr(thread, "parent", None)
         if not parent or getattr(parent, "id", 0) != forum_id:
             return await _ephemeral(interaction, "Nur im Ticket-Thread.")
@@ -831,7 +851,7 @@ class TicketService:
         if not thread:
             return await _ephemeral(interaction, "Nur im Ticket-Thread.")
 
-        forum_id = self.settings.get_int("bot.forum_channel_id")
+        forum_id = self._gi(message.guild.id, "bot.forum_channel_id")
         parent = getattr(thread, "parent", None)
         if not parent or getattr(parent, "id", 0) != forum_id:
             return await _ephemeral(interaction, "Nur im Ticket-Thread.")
@@ -978,7 +998,7 @@ class TicketService:
         await self.db.close_ticket(int(t["ticket_id"]))
         closed_at = datetime.now(timezone.utc)
 
-        rating_enabled = self.settings.get_bool("ticket.rating_enabled", True)
+        rating_enabled = self._gb(guild.id, "ticket.rating_enabled", True)
 
         uid = int(t["user_id"]) if t.get("user_id") else 0
         if not uid:
@@ -1079,7 +1099,7 @@ class TicketService:
         if not thread:
             return await _ephemeral(interaction, "Nur im Ticket-Thread.")
 
-        forum_id = self.settings.get_int("bot.forum_channel_id")
+        forum_id = self._gi(message.guild.id, "bot.forum_channel_id")
         parent = getattr(thread, "parent", None)
         if not parent or getattr(parent, "id", 0) != forum_id:
             return await _ephemeral(interaction, "Nur im Ticket-Thread.")
@@ -1095,7 +1115,7 @@ class TicketService:
         await self.db.close_ticket(int(t["ticket_id"]))
         closed_at = datetime.now(timezone.utc)
 
-        rating_enabled = self.settings.get_bool("ticket.rating_enabled", True)
+        rating_enabled = self._gb(interaction.guild.id, "ticket.rating_enabled", True)
 
         uid = int(t["user_id"]) if t.get("user_id") else 0
         if not uid:
@@ -1419,7 +1439,7 @@ class TicketService:
         except Exception:
             pass
 
-        esc_role_id = self.settings.get_int("ticket.escalation_role_id")
+        esc_role_id = self._gi(interaction.guild.id, "ticket.escalation_role_id")
         if esc_role_id:
             try:
                 await thread.send(f"<@&{esc_role_id}>")
@@ -1462,7 +1482,7 @@ class TicketService:
             return await _ephemeral(interaction, err)
 
         category_key = (category_key or "").strip()
-        categories = self.settings.get("categories", {}) or {}
+        categories = self._g(interaction.guild.id, "categories", {}) or {}
         if category_key not in categories:
             return await _ephemeral(interaction, "Kategorie nicht gefunden.")
 
@@ -1539,7 +1559,7 @@ class TicketService:
         if err:
             return await _ephemeral(interaction, err)
 
-        await _ephemeral(interaction, "Erstelle Transcript…")
+        await _ephemeral(interaction, "Erstelle Transcript...")
 
         html_data = await self._render_html_transcript(thread, t)
         filename = f"ticket-{int(t['ticket_id'])}-transcript.html"
@@ -1549,10 +1569,11 @@ class TicketService:
         except Exception:
             pass
 
-        upload_url = await self._upload_transcript(filename, html_data)
+        guild_id = int(t.get("guild_id") or (interaction.guild.id if interaction.guild else 0) or 0)
+        upload_url = await self._upload_transcript(guild_id, filename, html_data)
         if upload_url:
             try:
-                await thread.send(f"🧾 Transcript: {upload_url}")
+                await thread.send(f"Transcript: {upload_url}")
             except Exception:
                 pass
 
@@ -1676,12 +1697,12 @@ body {{ font-family: "gg sans","Noto Sans","Helvetica Neue",Arial,sans-serif; ba
 """
         return html.encode("utf-8")
 
-    async def _upload_transcript(self, filename: str, data: bytes) -> str | None:
-        url = str(self.settings.get("ticket.transcript_upload_url", "") or "").strip()
+    async def _upload_transcript(self, guild_id: int, filename: str, data: bytes) -> str | None:
+        url = str(self._g(guild_id, "ticket.transcript_upload_url", "") or "").strip()
         if not url:
             return None
-        token = str(self.settings.get("ticket.transcript_upload_token", "") or "").strip()
-        mode = str(self.settings.get("ticket.transcript_upload_mode", "multipart") or "multipart").strip()
+        token = str(self._g(guild_id, "ticket.transcript_upload_token", "") or "").strip()
+        mode = str(self._g(guild_id, "ticket.transcript_upload_mode", "multipart") or "multipart").strip()
 
         def _post_raw():
             req = urllib.request.Request(url, data=data, method="POST")
@@ -1741,9 +1762,10 @@ body {{ font-family: "gg sans","Noto Sans","Helvetica Neue",Arial,sans-serif; ba
         try:
             html_data = await self._render_html_transcript(thread, t)
             filename = f"ticket-{int(t['ticket_id'])}-transcript.html"
-            upload_url = await self._upload_transcript(filename, html_data)
+            guild_id = int(t.get("guild_id") or (thread.guild.id if thread and thread.guild else 0) or 0)
+            upload_url = await self._upload_transcript(guild_id, filename, html_data)
             if upload_url:
-                await user.send(f"🧾 Transcript: {upload_url}")
+                await user.send(f"Transcript: {upload_url}")
                 return True, None, upload_url
             if len(html_data) <= 7_500_000:
                 await user.send(file=discord.File(io.BytesIO(html_data), filename=filename))
@@ -1754,22 +1776,7 @@ body {{ font-family: "gg sans","Noto Sans","Helvetica Neue",Arial,sans-serif; ba
 
     async def run_automation(self):
         await self.bot.wait_until_ready()
-        guild_id = self.settings.get_int("bot.guild_id")
-        if not guild_id:
-            return
-        guild = self.bot.get_guild(guild_id)
-        if not guild:
-            try:
-                guild = await self.bot.fetch_guild(int(guild_id))
-            except Exception:
-                guild = None
-        if not guild:
-            return
-
         now = datetime.now(timezone.utc)
-        auto_close_hours = float(self.settings.get("ticket.auto_close_hours", 0) or 0)
-        sla_minutes = float(self.settings.get("ticket.sla_first_response_minutes", 0) or 0)
-
         rows = await self.db.list_active_tickets(limit=500)
         for row in rows:
             t = {
@@ -1790,6 +1797,13 @@ body {{ font-family: "gg sans","Noto Sans","Helvetica Neue",Arial,sans-serif; ba
                 "status_label": row[14],
                 "escalated_level": row[15],
             }
+            guild_id = int(t["guild_id"])
+            guild = self.bot.get_guild(guild_id)
+            if not guild:
+                continue
+
+            auto_close_hours = float(self._g(guild_id, "ticket.auto_close_hours", 0) or 0)
+            sla_minutes = float(self._g(guild_id, "ticket.sla_first_response_minutes", 0) or 0)
 
             thread = guild.get_thread(int(t["thread_id"]))
             if not thread:
@@ -1904,7 +1918,7 @@ body {{ font-family: "gg sans","Noto Sans","Helvetica Neue",Arial,sans-serif; ba
 
         await self.db.set_rating(int(ticket_id), int(rating), comment)
 
-        guild_id = self.settings.get_int("bot.guild_id") or 0
+        guild_id = int(row[1]) if row and len(row) > 1 else 0
         guild = self.bot.get_guild(guild_id) if guild_id else None
 
         try:

@@ -1,9 +1,7 @@
 import discord
 from discord.ext import tasks
 
-_PRESENCE_TEXT_1 = "💌 Schreib mir eine DM für Support"
-_PRESENCE_TOTAL_FMT = "🎫 Tickets insgesamt: {total}"
-_PRESENCE_OPEN_FMT = "🟢 Offene Tickets: {open}"
+_PRESENCE_TEXT_1 = "💌 𑁉 Schreib mir eine DM für Support"
 
 
 class PresenceRotator:
@@ -48,25 +46,60 @@ class PresenceRotator:
 
         return 0
 
-    async def _get_stats(self) -> tuple[int, int]:
-        total = await self._fetch_count("SELECT COUNT(*) FROM tickets")
-        open_ = await self._fetch_count("SELECT COUNT(*) FROM tickets WHERE status IS NULL OR status != 'closed'")
-        return total, open_
+    async def _fetch_sum(self, query: str) -> int:
+        return await self._fetch_count(query)
+
+    async def _get_stats(self) -> dict[str, int]:
+        total_tickets = await self._fetch_count("SELECT COUNT(*) FROM tickets")
+        open_tickets = await self._fetch_count("SELECT COUNT(*) FROM tickets WHERE status IS NULL OR status != 'closed'")
+        total_users = await self._fetch_count("SELECT COUNT(*) FROM user_stats")
+        total_messages = await self._fetch_sum("SELECT COALESCE(SUM(message_count), 0) FROM user_stats")
+        total_voice_hours = await self._fetch_sum("SELECT COALESCE(SUM(voice_seconds), 0) FROM user_stats") // 3600
+        active_users = await self._fetch_count(
+            "SELECT COUNT(*) FROM user_stats "
+            "WHERE (last_message_at IS NOT NULL AND datetime(last_message_at) >= datetime('now','-1 day')) "
+            "OR (last_voice_at IS NOT NULL AND datetime(last_voice_at) >= datetime('now','-1 day'))"
+        )
+        warns = await self._fetch_count("SELECT COUNT(*) FROM infractions WHERE action = 'warn'")
+        giveaways_open = await self._fetch_count("SELECT COUNT(*) FROM giveaways WHERE status = 'open'")
+        polls_open = await self._fetch_count("SELECT COUNT(*) FROM polls WHERE status = 'open'")
+        applications_open = await self._fetch_count("SELECT COUNT(*) FROM applications WHERE status = 'open'")
+
+        return {
+            "total_tickets": total_tickets,
+            "open_tickets": open_tickets,
+            "total_users": total_users,
+            "total_messages": total_messages,
+            "total_voice_hours": total_voice_hours,
+            "active_users": active_users,
+            "warns": warns,
+            "giveaways_open": giveaways_open,
+            "polls_open": polls_open,
+            "applications_open": applications_open,
+        }
 
     @tasks.loop(seconds=20)
     async def _loop(self):
-        total, open_ = await self._get_stats()
+        s = await self._get_stats()
 
         states = [
-            _PRESENCE_TEXT_1,
-            _PRESENCE_TOTAL_FMT.format(total=total),
-            _PRESENCE_OPEN_FMT.format(open=open_),
+            (discord.ActivityType.listening, _PRESENCE_TEXT_1),
+            (discord.ActivityType.watching, f"🟢 𑁉 Aktive User (24h): {s['active_users']}"),
+            (discord.ActivityType.watching, f"💬 𑁉 Nachrichten gesamt: {s['total_messages']}"),
+            (discord.ActivityType.watching, f"🎙️ 𑁉 Voice-Stunden: {s['total_voice_hours']}"),
+            (discord.ActivityType.playing, f"🎫 𑁉 Tickets gesamt: {s['total_tickets']}"),
+            (discord.ActivityType.watching, f"🟡 𑁉 Offene Tickets: {s['open_tickets']}"),
+            (discord.ActivityType.watching, f"⚠️ 𑁉 Warnungen: {s['warns']}"),
+            (discord.ActivityType.watching, f"🎁 𑁉 Giveaways offen: {s['giveaways_open']}"),
+            (discord.ActivityType.watching, f"📊 𑁉 Umfragen offen: {s['polls_open']}"),
+            (discord.ActivityType.watching, f"📝 𑁉 Bewerbungen offen: {s['applications_open']}"),
+            (discord.ActivityType.watching, f"👥 𑁉 User im System: {s['total_users']}"),
         ]
 
-        text = states[self._i % len(states)]
+        activity_type, text = states[self._i % len(states)]
         self._i += 1
 
-        activity = discord.Activity(type=discord.ActivityType.watching, name=text)
+        activity = discord.Activity(type=activity_type, name=text)
         try:
             await self.bot.change_presence(activity=activity, status=discord.Status.online)
         except Exception:

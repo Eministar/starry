@@ -22,29 +22,25 @@ class ForumLogService:
         self._ready = False
         self._cache: dict[str, int] = {}
 
-    def enabled(self) -> bool:
+    def enabled(self, guild_id: int | None = None) -> bool:
+        if guild_id:
+            return bool(self.settings.get_guild_bool(int(guild_id), "logs.enabled", True))
         return bool(self.settings.get_bool("logs.enabled", True))
 
     async def start(self):
-        if self._ready or not self.enabled():
+        if self._ready:
             return
-
-        guild_id = self.settings.get_int("bot.guild_id")
-        forum_id = self.settings.get_int("bot.log_forum_channel_id")
-        if not guild_id or not forum_id:
-            return
-
-        guild = self.bot.get_guild(int(guild_id))
-        if not guild:
-            return
-
-        forum = guild.get_channel(int(forum_id))
-        if not isinstance(forum, discord.ForumChannel):
-            return
-
-        for key, title in self.DEFAULT_THREADS.items():
-            await self.ensure_thread(forum, guild, key, title)
-
+        for guild in list(self.bot.guilds):
+            if not self.enabled(guild.id):
+                continue
+            forum_id = self.settings.get_guild_int(guild.id, "bot.log_forum_channel_id")
+            if not forum_id:
+                continue
+            forum = guild.get_channel(int(forum_id))
+            if not isinstance(forum, discord.ForumChannel):
+                continue
+            for key, title in self.DEFAULT_THREADS.items():
+                await self.ensure_thread(forum, guild, key, title)
         self._ready = True
 
     async def ensure_thread(self, forum: discord.ForumChannel, guild: discord.Guild, key: str, title: str) -> int | None:
@@ -67,17 +63,11 @@ class ForumLogService:
         self._cache[key] = int(thread.id)
         return int(thread.id)
 
-    async def emit(self, key: str, embed: discord.Embed, content: str | None = None):
-        if not self.enabled():
+    async def emit(self, guild: discord.Guild, key: str, embed: discord.Embed, content: str | None = None):
+        if not self.enabled(guild.id):
             return
-
-        guild_id = self.settings.get_int("bot.guild_id")
-        forum_id = self.settings.get_int("bot.log_forum_channel_id")
-        if not guild_id or not forum_id:
-            return
-
-        guild = self.bot.get_guild(int(guild_id))
-        if not guild:
+        forum_id = self.settings.get_guild_int(guild.id, "bot.log_forum_channel_id")
+        if not forum_id:
             return
 
         forum = guild.get_channel(int(forum_id))

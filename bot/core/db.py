@@ -153,6 +153,16 @@ class Database:
         );
         """)
         await self._conn.execute("""
+        CREATE TABLE IF NOT EXISTS birthdays_global (
+            user_id INTEGER NOT NULL,
+            day INTEGER NOT NULL,
+            month INTEGER NOT NULL,
+            year INTEGER NOT NULL,
+            created_at TEXT NOT NULL,
+            PRIMARY KEY (user_id)
+        );
+        """)
+        await self._conn.execute("""
         CREATE TABLE IF NOT EXISTS achievements (
             guild_id INTEGER NOT NULL,
             user_id INTEGER NOT NULL,
@@ -168,6 +178,19 @@ class Database:
             value_json TEXT NOT NULL,
             updated_at TEXT NOT NULL,
             PRIMARY KEY (guild_id, key)
+        );
+        """)
+        await self._conn.execute("""
+        CREATE TABLE IF NOT EXISTS dashboard_sessions (
+            session_id TEXT PRIMARY KEY,
+            user_id INTEGER NOT NULL,
+            username TEXT NOT NULL,
+            avatar TEXT,
+            access_token TEXT NOT NULL,
+            refresh_token TEXT,
+            expires_at INTEGER NOT NULL,
+            guilds_json TEXT NOT NULL,
+            created_at INTEGER NOT NULL
         );
         """)
         await self._conn.execute("""
@@ -283,6 +306,7 @@ class Database:
             "CREATE INDEX IF NOT EXISTS idx_applications_user ON applications(guild_id, user_id)")
 
         await self._conn.commit()
+        await self._ensure_birthdays_global_seed()
 
     async def _table_has_column(self, table: str, column: str) -> bool:
         cur = await self._conn.execute(f"PRAGMA table_info({table});")
@@ -306,6 +330,39 @@ class Database:
         await self._ensure_column("tickets", "escalated_level", "INTEGER DEFAULT 0")
         await self._ensure_column("tickets", "escalated_by", "INTEGER")
         await self._ensure_column("tickets", "escalated_at", "TEXT")
+        await self._conn.commit()
+
+    async def _ensure_birthdays_global_seed(self):
+        try:
+            cur = await self._conn.execute("SELECT COUNT(*) FROM birthdays_global;")
+            row = await cur.fetchone()
+            count = int(row[0]) if row else 0
+        except Exception:
+            count = 0
+        if count:
+            return
+        try:
+            cur = await self._conn.execute(
+                "SELECT user_id, day, month, year, created_at FROM birthdays"
+            )
+            rows = await cur.fetchall()
+        except Exception:
+            rows = []
+        if not rows:
+            return
+        seen = set()
+        for row in rows:
+            uid = int(row[0])
+            if uid in seen:
+                continue
+            seen.add(uid)
+            await self._conn.execute(
+                """
+                INSERT OR IGNORE INTO birthdays_global (user_id, day, month, year, created_at)
+                VALUES (?, ?, ?, ?, ?);
+                """,
+                (uid, int(row[1]), int(row[2]), int(row[3]), row[4]),
+            )
         await self._conn.commit()
 
     async def now_iso(self) -> str:
@@ -608,6 +665,20 @@ class Database:
         rows = await cur.fetchall()
         return rows
 
+    async def list_tickets_for_guild(self, guild_id: int, limit: int = 200):
+        cur = await self._conn.execute(
+            """
+            SELECT id, user_id, thread_id, status, claimed_by, created_at, closed_at, rating
+            FROM tickets
+            WHERE guild_id = ?
+            ORDER BY id DESC
+            LIMIT ?;
+            """,
+            (int(guild_id), int(limit)),
+        )
+        rows = await cur.fetchall()
+        return rows
+
     async def list_logs(self, limit: int = 200):
         cur = await self._conn.execute("""
         SELECT id, event, payload, created_at
@@ -617,6 +688,55 @@ class Database:
         """, (limit,))
         rows = await cur.fetchall()
         return rows
+
+    async def count_tickets_by_status_for_guild(self, guild_id: int) -> dict:
+        cur = await self._conn.execute(
+            "SELECT status, COUNT(*) FROM tickets WHERE guild_id = ? GROUP BY status;",
+            (int(guild_id),),
+        )
+        rows = await cur.fetchall()
+        out = {"open": 0, "claimed": 0, "closed": 0}
+        for r in rows:
+            if not r:
+                continue
+            status = str(r[0])
+            count = int(r[1]) if r[1] is not None else 0
+            out[status] = count
+        out["total"] = int(out.get("open", 0) + out.get("claimed", 0) + out.get("closed", 0))
+        return out
+
+    async def count_giveaways(self, guild_id: int | None = None) -> int:
+        if guild_id:
+            cur = await self._conn.execute(
+                "SELECT COUNT(*) FROM giveaways WHERE guild_id = ?;",
+                (int(guild_id),),
+            )
+        else:
+            cur = await self._conn.execute("SELECT COUNT(*) FROM giveaways;")
+        row = await cur.fetchone()
+        return int(row[0] if row else 0)
+
+    async def count_polls(self, guild_id: int | None = None) -> int:
+        if guild_id:
+            cur = await self._conn.execute(
+                "SELECT COUNT(*) FROM polls WHERE guild_id = ?;",
+                (int(guild_id),),
+            )
+        else:
+            cur = await self._conn.execute("SELECT COUNT(*) FROM polls;")
+        row = await cur.fetchone()
+        return int(row[0] if row else 0)
+
+    async def count_applications(self, guild_id: int | None = None) -> int:
+        if guild_id:
+            cur = await self._conn.execute(
+                "SELECT COUNT(*) FROM applications WHERE guild_id = ?;",
+                (int(guild_id),),
+            )
+        else:
+            cur = await self._conn.execute("SELECT COUNT(*) FROM applications;")
+        row = await cur.fetchone()
+        return int(row[0] if row else 0)
 
     async def create_backup(self, guild_id: int, name: str, payload_json: str):
         created_at = await self.now_iso()
@@ -718,6 +838,63 @@ class Database:
         row = await cur.fetchone()
         return int(row[0] if row else 0)
 
+    async def set_birthday_global(self, user_id: int, day: int, month: int, year: int):
+        created_at = await self.now_iso()
+        await self._conn.execute(
+            """
+            INSERT INTO birthdays_global (user_id, day, month, year, created_at)
+            VALUES (?, ?, ?, ?, ?)
+            ON CONFLICT(user_id) DO UPDATE SET
+                day = excluded.day,
+                month = excluded.month,
+                year = excluded.year;
+            """,
+            (int(user_id), int(day), int(month), int(year), created_at),
+        )
+        await self._conn.commit()
+
+    async def remove_birthday_global(self, user_id: int):
+        await self._conn.execute(
+            "DELETE FROM birthdays_global WHERE user_id = ?;",
+            (int(user_id),),
+        )
+        await self._conn.commit()
+
+    async def get_birthday_global(self, user_id: int):
+        cur = await self._conn.execute(
+            "SELECT day, month, year FROM birthdays_global WHERE user_id = ? LIMIT 1;",
+            (int(user_id),),
+        )
+        return await cur.fetchone()
+
+    async def list_birthdays_for_day_global(self, day: int, month: int):
+        cur = await self._conn.execute(
+            """
+            SELECT user_id, day, month, year
+            FROM birthdays_global
+            WHERE day = ? AND month = ?;
+            """,
+            (int(day), int(month)),
+        )
+        return await cur.fetchall()
+
+    async def list_birthdays_global(self, limit: int = 20, offset: int = 0):
+        cur = await self._conn.execute(
+            """
+            SELECT user_id, day, month, year
+            FROM birthdays_global
+            ORDER BY month ASC, day ASC
+            LIMIT ? OFFSET ?;
+            """,
+            (int(limit), int(offset)),
+        )
+        return await cur.fetchall()
+
+    async def count_birthdays_global(self):
+        cur = await self._conn.execute("SELECT COUNT(*) FROM birthdays_global;")
+        row = await cur.fetchone()
+        return int(row[0] if row else 0)
+
     async def add_achievement(self, guild_id: int, user_id: int, code: str):
         unlocked_at = await self.now_iso()
         await self._conn.execute("""
@@ -749,6 +926,26 @@ class Database:
         """, (int(guild_id), str(key)))
         row = await cur.fetchone()
         return row[0] if row else None
+
+    async def list_guild_configs(self, guild_id: int):
+        cur = await self._conn.execute(
+            "SELECT key, value_json FROM guild_configs WHERE guild_id = ?;",
+            (int(guild_id),),
+        )
+        return await cur.fetchall()
+
+    async def list_all_guild_configs(self):
+        cur = await self._conn.execute(
+            "SELECT guild_id, key, value_json FROM guild_configs;"
+        )
+        return await cur.fetchall()
+
+    async def delete_guild_configs(self, guild_id: int):
+        await self._conn.execute(
+            "DELETE FROM guild_configs WHERE guild_id = ?;",
+            (int(guild_id),),
+        )
+        await self._conn.commit()
 
     async def count_achievement(self, guild_id: int, code: str):
         cur = await self._conn.execute("""
@@ -893,6 +1090,20 @@ class Database:
         rows = await cur.fetchall()
         return rows
 
+    async def list_applications_for_guild(self, guild_id: int, limit: int = 200):
+        cur = await self._conn.execute(
+            """
+            SELECT id, user_id, thread_id, status, created_at, closed_at
+            FROM applications
+            WHERE guild_id = ?
+            ORDER BY id DESC
+            LIMIT ?;
+            """,
+            (int(guild_id), int(limit)),
+        )
+        rows = await cur.fetchall()
+        return rows
+
     async def count_tickets_by_status(self) -> dict:
         cur = await self._conn.execute("""
         SELECT status, COUNT(*) FROM tickets GROUP BY status;
@@ -914,6 +1125,57 @@ class Database:
         INSERT INTO logs (event, payload, created_at)
         VALUES (?, ?, ?);
         """, (event, json.dumps(payload, ensure_ascii=False), created_at))
+        await self._conn.commit()
+
+    async def upsert_dashboard_session(
+        self,
+        session_id: str,
+        user_id: int,
+        username: str,
+        avatar: str | None,
+        access_token: str,
+        refresh_token: str | None,
+        expires_at: int,
+        guilds_json: str,
+    ):
+        created_at = int(time.time())
+        await self._conn.execute(
+            """
+            INSERT OR REPLACE INTO dashboard_sessions
+            (session_id, user_id, username, avatar, access_token, refresh_token, expires_at, guilds_json, created_at)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?);
+            """,
+            (
+                str(session_id),
+                int(user_id),
+                str(username),
+                str(avatar) if avatar else None,
+                str(access_token),
+                str(refresh_token) if refresh_token else None,
+                int(expires_at),
+                str(guilds_json),
+                int(created_at),
+            ),
+        )
+        await self._conn.commit()
+
+    async def get_dashboard_session(self, session_id: str):
+        cur = await self._conn.execute(
+            """
+            SELECT session_id, user_id, username, avatar, access_token, refresh_token, expires_at, guilds_json, created_at
+            FROM dashboard_sessions
+            WHERE session_id = ?
+            LIMIT 1;
+            """,
+            (str(session_id),),
+        )
+        return await cur.fetchone()
+
+    async def delete_dashboard_session(self, session_id: str):
+        await self._conn.execute(
+            "DELETE FROM dashboard_sessions WHERE session_id = ?;",
+            (str(session_id),),
+        )
         await self._conn.commit()
 
 

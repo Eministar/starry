@@ -1,15 +1,20 @@
 import os
 import json
 import asyncio
+import time
+import secrets
 import discord
+import httpx
 from datetime import timedelta
+from urllib.parse import urlencode
 from fastapi import FastAPI, Request, HTTPException, WebSocket
-from fastapi.responses import FileResponse, JSONResponse
+from fastapi.responses import FileResponse, JSONResponse, RedirectResponse
 from fastapi.staticfiles import StaticFiles
 import uvicorn
 
 from bot.modules.tickets.services.ticket_service import TicketService
 from bot.modules.moderation.services.mod_service import ModerationService
+
 
 class WebServer:
     def __init__(self, settings, db, bot):
@@ -31,24 +36,120 @@ class WebServer:
         async def index():
             return FileResponse(os.path.join(static_dir, "index.html"))
 
-        @self.app.get("/api/settings")
-        async def get_settings(request: Request):
-            self._auth(request)
-            return JSONResponse(self.settings.dump())
+        @self.app.get("/login")
+        async def login():
+            auth_url = self._discord_oauth_url()
+            return RedirectResponse(auth_url)
 
-        @self.app.put("/api/settings")
-        async def put_settings(request: Request):
-            self._auth(request)
+        @self.app.get("/logout")
+        async def logout(request: Request):
+            session_id = request.cookies.get(self._session_cookie_name())
+            if session_id:
+                await self.db.delete_dashboard_session(session_id)
+            resp = RedirectResponse("/")
+            resp.delete_cookie(self._session_cookie_name())
+            return resp
+
+        @self.app.get("/oauth/callback")
+        async def oauth_callback(request: Request, code: str | None = None):
+            if not code:
+                raise HTTPException(status_code=400, detail="Missing code")
+            token_data = await self._exchange_code(code)
+            access_token = token_data.get("access_token")
+            refresh_token = token_data.get("refresh_token")
+            expires_in = int(token_data.get("expires_in") or 0)
+            if not access_token or not expires_in:
+                raise HTTPException(status_code=400, detail="OAuth failed")
+
+            user = await self._fetch_user(access_token)
+            guilds = await self._fetch_guilds(access_token)
+
+            session_id = secrets.token_urlsafe(32)
+            expires_at = int(time.time()) + int(expires_in)
+            await self.db.upsert_dashboard_session(
+                session_id=session_id,
+                user_id=int(user.get("id")),
+                username=str(user.get("username")),
+                avatar=str(user.get("avatar") or ""),
+                access_token=str(access_token),
+                refresh_token=str(refresh_token) if refresh_token else None,
+                expires_at=expires_at,
+                guilds_json=json.dumps(guilds, ensure_ascii=False),
+            )
+
+            resp = RedirectResponse("/")
+            resp.set_cookie(
+                self._session_cookie_name(),
+                session_id,
+                httponly=True,
+                samesite="lax",
+                max_age=int(expires_in),
+            )
+            return resp
+
+        @self.app.get("/api/me")
+        async def me(request: Request):
+            session = await self._require_session(request)
+            return JSONResponse(self._session_payload(session))
+
+        @self.app.get("/api/guilds")
+        async def list_guilds(request: Request):
+            session = await self._require_session(request)
+            return JSONResponse(self._accessible_guilds(session))
+
+        @self.app.get("/api/global/summary")
+        async def global_summary(request: Request):
+            await self._require_session(request)
+            tickets = await self.db.count_tickets_by_status()
+            giveaways = await self.db.count_giveaways()
+            polls = await self.db.count_polls()
+            applications = await self.db.count_applications()
+            birthdays = await self.db.count_birthdays_global()
+            return JSONResponse({
+                "tickets": tickets,
+                "giveaways": giveaways,
+                "polls": polls,
+                "applications": applications,
+                "birthdays": birthdays,
+            })
+
+        @self.app.get("/api/guilds/{guild_id}/summary")
+        async def guild_summary(request: Request, guild_id: int):
+            await self._require_guild_access(request, guild_id)
+            tickets = await self.db.count_tickets_by_status_for_guild(int(guild_id))
+            giveaways = await self.db.count_giveaways(int(guild_id))
+            polls = await self.db.count_polls(int(guild_id))
+            applications = await self.db.count_applications(int(guild_id))
+            return JSONResponse({
+                "tickets": tickets,
+                "giveaways": giveaways,
+                "polls": polls,
+                "applications": applications,
+            })
+
+        @self.app.get("/api/guilds/{guild_id}/settings")
+        async def get_guild_settings(request: Request, guild_id: int):
+            await self._require_guild_access(request, guild_id)
+            return JSONResponse(self.settings.dump_guild(int(guild_id)))
+
+        @self.app.get("/api/guilds/{guild_id}/overrides")
+        async def get_guild_overrides(request: Request, guild_id: int):
+            await self._require_guild_access(request, guild_id)
+            return JSONResponse(self.settings.dump_guild_overrides(int(guild_id)))
+
+        @self.app.put("/api/guilds/{guild_id}/overrides")
+        async def put_guild_overrides(request: Request, guild_id: int):
+            await self._require_guild_access(request, guild_id)
             data = await request.json()
             if not isinstance(data, dict):
                 raise HTTPException(status_code=400, detail="Invalid settings payload")
-            await self.settings.replace_overrides(data)
+            await self.settings.replace_guild_overrides(self.db, int(guild_id), data)
             return JSONResponse({"ok": True})
 
-        @self.app.get("/api/tickets")
-        async def list_tickets(request: Request, limit: int = 200):
-            self._auth(request)
-            rows = await self.db.list_tickets(limit=limit)
+        @self.app.get("/api/guilds/{guild_id}/tickets")
+        async def list_tickets(request: Request, guild_id: int, limit: int = 200):
+            await self._require_guild_access(request, guild_id)
+            rows = await self.db.list_tickets_for_guild(int(guild_id), limit=limit)
             out = []
             for r in rows:
                 out.append({
@@ -63,15 +164,9 @@ class WebServer:
                 })
             return JSONResponse(out)
 
-        @self.app.get("/api/summary")
-        async def summary(request: Request):
-            self._auth(request)
-            stats = await self.db.count_tickets_by_status()
-            return JSONResponse(stats)
-
         @self.app.get("/api/logs")
         async def list_logs(request: Request, limit: int = 200):
-            self._auth(request)
+            await self._require_session(request)
             rows = await self.db.list_logs(limit=limit)
             out = []
             for r in rows:
@@ -83,40 +178,40 @@ class WebServer:
                 })
             return JSONResponse(out)
 
-        @self.app.get("/api/snippets")
-        async def get_snippets(request: Request):
-            self._auth(request)
-            data = self.settings.get("ticket.snippets", {}) or {}
+        @self.app.get("/api/guilds/{guild_id}/snippets")
+        async def get_snippets(request: Request, guild_id: int):
+            await self._require_guild_access(request, guild_id)
+            data = self.settings.get_guild(int(guild_id), "ticket.snippets", {}) or {}
             return JSONResponse(data)
 
-        @self.app.put("/api/snippets")
-        async def put_snippets(request: Request):
-            self._auth(request)
+        @self.app.put("/api/guilds/{guild_id}/snippets")
+        async def put_snippets(request: Request, guild_id: int):
+            await self._require_guild_access(request, guild_id)
             data = await request.json()
             if not isinstance(data, dict):
                 raise HTTPException(status_code=400, detail="Invalid snippets payload")
-            await self.settings.set_override("ticket.snippets", data)
+            await self.settings.set_guild_override(self.db, int(guild_id), "ticket.snippets", data)
             return JSONResponse({"ok": True})
 
-        @self.app.get("/api/applications")
-        async def get_applications(request: Request):
-            self._auth(request)
-            data = self.settings.get("applications", {}) or {}
+        @self.app.get("/api/guilds/{guild_id}/applications")
+        async def get_applications(request: Request, guild_id: int):
+            await self._require_guild_access(request, guild_id)
+            data = self.settings.get_guild(int(guild_id), "applications", {}) or {}
             return JSONResponse(data)
 
-        @self.app.put("/api/applications")
-        async def put_applications(request: Request):
-            self._auth(request)
+        @self.app.put("/api/guilds/{guild_id}/applications")
+        async def put_applications(request: Request, guild_id: int):
+            await self._require_guild_access(request, guild_id)
             data = await request.json()
             if not isinstance(data, dict):
                 raise HTTPException(status_code=400, detail="Invalid applications payload")
-            await self.settings.set_override("applications", data)
+            await self.settings.set_guild_override(self.db, int(guild_id), "applications", data)
             return JSONResponse({"ok": True})
 
-        @self.app.get("/api/applications/list")
-        async def list_applications(request: Request, limit: int = 200):
-            self._auth(request)
-            rows = await self.db.list_applications(limit=limit)
+        @self.app.get("/api/guilds/{guild_id}/applications/list")
+        async def list_applications(request: Request, guild_id: int, limit: int = 200):
+            await self._require_guild_access(request, guild_id)
+            rows = await self.db.list_applications_for_guild(int(guild_id), limit=limit)
             out = []
             for r in rows:
                 out.append({
@@ -129,17 +224,17 @@ class WebServer:
                 })
             return JSONResponse(out)
 
-        @self.app.websocket("/ws/logs")
-        async def ws_logs(websocket):
-            token = websocket.query_params.get("token", "")
-            if not token:
-                await websocket.close(code=4401)
-                return
-            expected = self.settings.get("bot.dashboard.token", "change-me-now")
-            if token != expected:
-                await websocket.close(code=4403)
-                return
+        @self.app.get("/api/global/birthdays")
+        async def list_global_birthdays(request: Request, limit: int = 25, offset: int = 0):
+            await self._require_session(request)
+            rows = await self.db.list_birthdays_global(limit=limit, offset=offset)
+            total = await self.db.count_birthdays_global()
+            out = [{"user_id": r[0], "day": r[1], "month": r[2], "year": r[3]} for r in rows]
+            return JSONResponse({"total": total, "items": out})
 
+        @self.app.websocket("/ws/logs")
+        async def ws_logs(websocket: WebSocket):
+            session = await self._require_socket_session(websocket)
             await websocket.accept()
             last_id = 0
             try:
@@ -159,12 +254,9 @@ class WebServer:
                 except Exception:
                     pass
 
-        @self.app.get("/api/users/search")
-        async def search_users(request: Request, query: str):
-            self._auth(request)
-            guild = await self._guild()
-            if not guild:
-                raise HTTPException(status_code=404, detail="Guild not found")
+        @self.app.get("/api/guilds/{guild_id}/users/search")
+        async def search_users(request: Request, guild_id: int, query: str):
+            guild = await self._require_guild_access(request, guild_id)
             q = (query or "").lower()
             out = []
             for m in guild.members:
@@ -174,12 +266,9 @@ class WebServer:
                         break
             return JSONResponse(out)
 
-        @self.app.get("/api/users/live")
-        async def live_users(request: Request, limit: int = 50):
-            self._auth(request)
-            guild = await self._guild()
-            if not guild:
-                raise HTTPException(status_code=404, detail="Guild not found")
+        @self.app.get("/api/guilds/{guild_id}/users/live")
+        async def live_users(request: Request, guild_id: int, limit: int = 50):
+            guild = await self._require_guild_access(request, guild_id)
             out = []
             for m in guild.members:
                 if m.status in (discord.Status.online, discord.Status.idle, discord.Status.dnd):
@@ -193,23 +282,23 @@ class WebServer:
                     break
             return JSONResponse(out)
 
-        @self.app.post("/api/discord/message")
-        async def send_message(request: Request):
-            self._auth(request)
+        @self.app.post("/api/guilds/{guild_id}/discord/message")
+        async def send_message(request: Request, guild_id: int):
+            guild = await self._require_guild_access(request, guild_id)
             data = await request.json()
             channel_id = self._int(data.get("channel_id", 0))
             content = str(data.get("content", "")).strip()
             if not channel_id or not content:
                 raise HTTPException(status_code=400, detail="Missing channel_id/content")
             ch = await self._channel(channel_id)
-            if not ch:
+            if not ch or getattr(ch, "guild", None) != guild:
                 raise HTTPException(status_code=404, detail="Channel not found")
             await ch.send(content=content)
             return JSONResponse({"ok": True})
 
-        @self.app.post("/api/discord/embed")
-        async def send_embed(request: Request):
-            self._auth(request)
+        @self.app.post("/api/guilds/{guild_id}/discord/embed")
+        async def send_embed(request: Request, guild_id: int):
+            guild = await self._require_guild_access(request, guild_id)
             data = await request.json()
             channel_id = self._int(data.get("channel_id", 0))
             title = str(data.get("title", "")).strip()
@@ -222,7 +311,7 @@ class WebServer:
             if not channel_id or not title:
                 raise HTTPException(status_code=400, detail="Missing channel_id/title")
             ch = await self._channel(channel_id)
-            if not ch:
+            if not ch or getattr(ch, "guild", None) != guild:
                 raise HTTPException(status_code=404, detail="Channel not found")
             c = None
             try:
@@ -250,17 +339,16 @@ class WebServer:
             await ch.send(embed=emb)
             return JSONResponse({"ok": True})
 
-        @self.app.post("/api/moderation/timeout")
-        async def mod_timeout(request: Request):
-            self._auth(request)
+        @self.app.post("/api/guilds/{guild_id}/moderation/timeout")
+        async def mod_timeout(request: Request, guild_id: int):
+            guild = await self._require_guild_access(request, guild_id)
             data = await request.json()
             user_id = self._int(data.get("user_id", 0))
             minutes = self._int(data.get("minutes", 0))
             moderator_id = self._int(data.get("moderator_id", 0))
             reason = str(data.get("reason", "")).strip() or None
-            guild = await self._guild()
-            if not guild or not user_id:
-                raise HTTPException(status_code=404, detail="Guild/User not found")
+            if not user_id:
+                raise HTTPException(status_code=404, detail="User not found")
             member = guild.get_member(user_id)
             if not member:
                 raise HTTPException(status_code=404, detail="Member not found")
@@ -275,35 +363,33 @@ class WebServer:
                     await member.edit(timed_out_until=until, reason=reason)
             return JSONResponse({"ok": True})
 
-        @self.app.post("/api/moderation/kick")
-        async def mod_kick(request: Request):
-            self._auth(request)
+        @self.app.post("/api/guilds/{guild_id}/moderation/kick")
+        async def mod_kick(request: Request, guild_id: int):
+            guild = await self._require_guild_access(request, guild_id)
             data = await request.json()
             user_id = self._int(data.get("user_id", 0))
             moderator_id = self._int(data.get("moderator_id", 0))
             reason = str(data.get("reason", "")).strip() or None
-            guild = await self._guild()
-            member = guild.get_member(user_id) if guild else None
+            member = guild.get_member(user_id) if user_id else None
             if not member:
                 raise HTTPException(status_code=404, detail="Member not found")
-            moderator = guild.get_member(moderator_id) if moderator_id and guild else None
+            moderator = guild.get_member(moderator_id) if moderator_id else None
             if moderator:
                 await self.moderation_service.kick(guild, moderator, member, reason)
             else:
                 await member.kick(reason=reason)
             return JSONResponse({"ok": True})
 
-        @self.app.post("/api/moderation/ban")
-        async def mod_ban(request: Request):
-            self._auth(request)
+        @self.app.post("/api/guilds/{guild_id}/moderation/ban")
+        async def mod_ban(request: Request, guild_id: int):
+            guild = await self._require_guild_access(request, guild_id)
             data = await request.json()
             user_id = self._int(data.get("user_id", 0))
             delete_days = self._int(data.get("delete_days", 0))
             moderator_id = self._int(data.get("moderator_id", 0))
             reason = str(data.get("reason", "")).strip() or None
-            guild = await self._guild()
-            if not guild or not user_id:
-                raise HTTPException(status_code=404, detail="Guild/User not found")
+            if not user_id:
+                raise HTTPException(status_code=404, detail="User not found")
             user = await self.bot.fetch_user(user_id)
             moderator = guild.get_member(moderator_id) if moderator_id else None
             if moderator:
@@ -312,19 +398,18 @@ class WebServer:
                 await guild.ban(user, reason=reason, delete_message_days=max(0, min(7, delete_days)))
             return JSONResponse({"ok": True})
 
-        @self.app.post("/api/moderation/purge")
-        async def mod_purge(request: Request):
-            self._auth(request)
+        @self.app.post("/api/guilds/{guild_id}/moderation/purge")
+        async def mod_purge(request: Request, guild_id: int):
+            guild = await self._require_guild_access(request, guild_id)
             data = await request.json()
             channel_id = self._int(data.get("channel_id", 0))
             amount = self._int(data.get("amount", 0))
             user_id = self._int(data.get("user_id", 0) or 0)
             moderator_id = self._int(data.get("moderator_id", 0))
             ch = await self._channel(channel_id)
-            if not isinstance(ch, discord.TextChannel):
+            if not isinstance(ch, discord.TextChannel) or ch.guild.id != guild.id:
                 raise HTTPException(status_code=404, detail="Channel not found")
-            guild = await self._guild()
-            moderator = guild.get_member(moderator_id) if guild and moderator_id else None
+            moderator = guild.get_member(moderator_id) if moderator_id else None
             if moderator:
                 deleted, _err = await self.moderation_service.purge(guild, moderator, ch, amount, guild.get_member(user_id) if user_id else None)
                 return JSONResponse({"ok": True, "deleted": int(deleted)})
@@ -334,15 +419,12 @@ class WebServer:
                 deleted = await ch.purge(limit=max(1, min(100, amount)), check=check, bulk=True)
                 return JSONResponse({"ok": True, "deleted": len(deleted)})
 
-        @self.app.post("/api/roles/add")
-        async def roles_add(request: Request):
-            self._auth(request)
+        @self.app.post("/api/guilds/{guild_id}/roles/add")
+        async def roles_add(request: Request, guild_id: int):
+            guild = await self._require_guild_access(request, guild_id)
             data = await request.json()
             user_id = self._int(data.get("user_id", 0))
             role_id = self._int(data.get("role_id", 0))
-            guild = await self._guild()
-            if not guild:
-                raise HTTPException(status_code=404, detail="Guild not found")
             member = guild.get_member(user_id)
             role = guild.get_role(role_id)
             if not member or not role:
@@ -350,15 +432,12 @@ class WebServer:
             await member.add_roles(role, reason="Dashboard")
             return JSONResponse({"ok": True})
 
-        @self.app.post("/api/roles/remove")
-        async def roles_remove(request: Request):
-            self._auth(request)
+        @self.app.post("/api/guilds/{guild_id}/roles/remove")
+        async def roles_remove(request: Request, guild_id: int):
+            guild = await self._require_guild_access(request, guild_id)
             data = await request.json()
             user_id = self._int(data.get("user_id", 0))
             role_id = self._int(data.get("role_id", 0))
-            guild = await self._guild()
-            if not guild:
-                raise HTTPException(status_code=404, detail="Guild not found")
             member = guild.get_member(user_id)
             role = guild.get_role(role_id)
             if not member or not role:
@@ -366,17 +445,14 @@ class WebServer:
             await member.remove_roles(role, reason="Dashboard")
             return JSONResponse({"ok": True})
 
-        @self.app.post("/api/tickets/action")
-        async def ticket_action(request: Request):
-            self._auth(request)
+        @self.app.post("/api/guilds/{guild_id}/tickets/action")
+        async def ticket_action(request: Request, guild_id: int):
+            guild = await self._require_guild_access(request, guild_id)
             data = await request.json()
             thread_id = self._int(data.get("thread_id", 0))
             action = str(data.get("action", "")).strip()
             user_id = self._int(data.get("user_id", 0) or 0)
             actor_id = self._int(data.get("actor_id", 0) or 0)
-            guild = await self._guild()
-            if not guild:
-                raise HTTPException(status_code=404, detail="Guild not found")
             thread = guild.get_thread(thread_id)
             if not thread:
                 fetched = await self.bot.fetch_channel(thread_id)
@@ -404,19 +480,9 @@ class WebServer:
             if not ok:
                 raise HTTPException(status_code=400, detail=err or "Ticket action failed")
             return JSONResponse({"ok": True})
-        @self.app.get("/api/summary")
-        async def summary(request: Request):
-            self._auth(request)
-            stats = await self.db.count_tickets_by_status()
-            return JSONResponse(stats)
 
-    def _auth(self, request: Request):
-        token = self.settings.get("bot.dashboard.token", "change-me-now")
-        header = request.headers.get("authorization", "")
-        if not header.startswith("Bearer "):
-            raise HTTPException(status_code=401, detail="Missing token")
-        if header.split("Bearer ", 1)[1].strip() != token:
-            raise HTTPException(status_code=403, detail="Invalid token")
+    def _session_cookie_name(self) -> str:
+        return "starry_session"
 
     def _int(self, value) -> int:
         try:
@@ -424,17 +490,147 @@ class WebServer:
         except Exception:
             return 0
 
-    async def _guild(self) -> discord.Guild | None:
-        gid = self.settings.get_int("bot.guild_id")
-        if not gid:
-            return None
-        g = self.bot.get_guild(int(gid))
-        if g:
-            return g
-        try:
-            return await self.bot.fetch_guild(int(gid))
-        except Exception:
-            return None
+    def _discord_oauth_url(self) -> str:
+        client_id = str(self.settings.get("bot.dashboard.client_id", "") or "").strip()
+        redirect = str(self.settings.get("bot.dashboard.redirect_uri", "") or "").strip()
+        if not client_id or not redirect:
+            raise HTTPException(status_code=500, detail="OAuth not configured")
+        params = {
+            "client_id": client_id,
+            "redirect_uri": redirect,
+            "response_type": "code",
+            "scope": "identify guilds",
+        }
+        return "https://discord.com/api/oauth2/authorize?" + urlencode(params)
+
+    async def _exchange_code(self, code: str) -> dict:
+        client_id = str(self.settings.get("bot.dashboard.client_id", "") or "").strip()
+        client_secret = str(self.settings.get("bot.dashboard.client_secret", "") or "").strip()
+        redirect = str(self.settings.get("bot.dashboard.redirect_uri", "") or "").strip()
+        if not client_id or not client_secret or not redirect:
+            raise HTTPException(status_code=500, detail="OAuth not configured")
+        data = {
+            "client_id": client_id,
+            "client_secret": client_secret,
+            "grant_type": "authorization_code",
+            "code": code,
+            "redirect_uri": redirect,
+        }
+        async with httpx.AsyncClient(timeout=15) as client:
+            resp = await client.post("https://discord.com/api/oauth2/token", data=data, headers={"Content-Type": "application/x-www-form-urlencoded"})
+        if resp.status_code >= 400:
+            raise HTTPException(status_code=400, detail=f"OAuth token failed: {resp.text}")
+        return resp.json()
+
+    async def _fetch_user(self, access_token: str) -> dict:
+        headers = {"Authorization": f"Bearer {access_token}"}
+        async with httpx.AsyncClient(timeout=15) as client:
+            resp = await client.get("https://discord.com/api/users/@me", headers=headers)
+        if resp.status_code >= 400:
+            raise HTTPException(status_code=400, detail="Failed to fetch user")
+        return resp.json()
+
+    async def _fetch_guilds(self, access_token: str) -> list:
+        headers = {"Authorization": f"Bearer {access_token}"}
+        async with httpx.AsyncClient(timeout=15) as client:
+            resp = await client.get("https://discord.com/api/users/@me/guilds", headers=headers)
+        if resp.status_code >= 400:
+            raise HTTPException(status_code=400, detail="Failed to fetch guilds")
+        data = resp.json()
+        return data if isinstance(data, list) else []
+
+    async def _require_session(self, request: Request) -> dict:
+        session_id = request.cookies.get(self._session_cookie_name())
+        if not session_id:
+            raise HTTPException(status_code=401, detail="Missing session")
+        row = await self.db.get_dashboard_session(session_id)
+        if not row:
+            raise HTTPException(status_code=401, detail="Invalid session")
+        expires_at = int(row[6])
+        if expires_at <= int(time.time()):
+            await self.db.delete_dashboard_session(session_id)
+            raise HTTPException(status_code=401, detail="Session expired")
+        return {
+            "session_id": row[0],
+            "user_id": int(row[1]),
+            "username": row[2],
+            "avatar": row[3],
+            "access_token": row[4],
+            "refresh_token": row[5],
+            "expires_at": int(row[6]),
+            "guilds": json.loads(row[7] or "[]"),
+        }
+
+    async def _require_socket_session(self, websocket: WebSocket) -> dict:
+        session_id = websocket.cookies.get(self._session_cookie_name())
+        if not session_id:
+            await websocket.close(code=4401)
+            raise HTTPException(status_code=401, detail="Missing session")
+        row = await self.db.get_dashboard_session(session_id)
+        if not row:
+            await websocket.close(code=4401)
+            raise HTTPException(status_code=401, detail="Invalid session")
+        expires_at = int(row[6])
+        if expires_at <= int(time.time()):
+            await self.db.delete_dashboard_session(session_id)
+            await websocket.close(code=4401)
+            raise HTTPException(status_code=401, detail="Session expired")
+        return {
+            "session_id": row[0],
+            "user_id": int(row[1]),
+            "username": row[2],
+            "avatar": row[3],
+            "access_token": row[4],
+            "refresh_token": row[5],
+            "expires_at": int(row[6]),
+            "guilds": json.loads(row[7] or "[]"),
+        }
+
+    def _session_payload(self, session: dict) -> dict:
+        return {
+            "user": {
+                "id": session["user_id"],
+                "username": session["username"],
+                "avatar": session.get("avatar") or None,
+            },
+            "guilds": self._accessible_guilds(session),
+        }
+
+    def _accessible_guilds(self, session: dict) -> list[dict]:
+        out = []
+        for g in session.get("guilds", []):
+            try:
+                gid = int(g.get("id"))
+            except Exception:
+                continue
+            perms = int(g.get("permissions") or 0)
+            is_owner = bool(g.get("owner"))
+            is_admin = (perms & 0x8) == 0x8
+            if not (is_owner or is_admin):
+                continue
+            bot_guild = self.bot.get_guild(gid)
+            if not bot_guild:
+                continue
+            out.append({
+                "id": gid,
+                "name": g.get("name") or bot_guild.name,
+                "icon": g.get("icon"),
+                "owner": is_owner,
+                "permissions": perms,
+                "bot_in_guild": True,
+            })
+        return out
+
+    async def _require_guild_access(self, request: Request, guild_id: int) -> discord.Guild:
+        session = await self._require_session(request)
+        allowed = {int(g["id"]) for g in self._accessible_guilds(session)}
+        gid = int(guild_id)
+        if gid not in allowed:
+            raise HTTPException(status_code=403, detail="Missing permissions")
+        guild = self.bot.get_guild(gid)
+        if not guild:
+            raise HTTPException(status_code=404, detail="Guild not found")
+        return guild
 
     async def _channel(self, channel_id: int):
         ch = self.bot.get_channel(int(channel_id))
@@ -452,3 +648,9 @@ class WebServer:
         self._server = uvicorn.Server(config)
         loop = asyncio.get_running_loop()
         self._task = loop.create_task(self._server.serve())
+
+    async def stop(self):
+        if self._server:
+            self._server.should_exit = True
+        if self._task:
+            await self._task

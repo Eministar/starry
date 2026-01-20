@@ -9,9 +9,9 @@ class PollCommands(commands.Cog):
         self.bot = bot
         self.service = getattr(bot, "poll_service", None) or PollService(bot, bot.settings, bot.db, bot.logger)
 
-    poll = app_commands.Group(name="poll", description="Umfrage Tools")
+    poll = app_commands.Group(name="poll", description="📊 𑁉 Umfrage-Tools")
 
-    @poll.command(name="create", description="Umfrage erstellen")
+    @poll.command(name="create", description="🗳️ 𑁉 Umfrage erstellen")
     @app_commands.describe(channel="Zielkanal")
     async def create(self, interaction: discord.Interaction, channel: discord.TextChannel):
         if not interaction.guild:

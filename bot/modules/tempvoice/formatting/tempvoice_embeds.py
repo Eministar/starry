@@ -12,12 +12,19 @@ def parse_hex_color(value: str, default: int = 0xB16B91) -> int:
         return default
 
 
-def _color(settings):
-    return parse_hex_color(settings.get("design.accent_color", "#B16B91"))
+def _color(settings, guild: discord.Guild | None):
+    if guild:
+        value = settings.get_guild(guild.id, "design.accent_color", "#B16B91")
+    else:
+        value = settings.get("design.accent_color", "#B16B91")
+    return parse_hex_color(value)
 
 
-def _footer(emb: discord.Embed, settings):
-    ft = settings.get("design.footer_text", None)
+def _footer(emb: discord.Embed, settings, guild: discord.Guild | None):
+    if guild:
+        ft = settings.get_guild(guild.id, "design.footer_text", None)
+    else:
+        ft = settings.get("design.footer_text", None)
     if ft:
         emb.set_footer(text=str(ft))
 
@@ -58,10 +65,10 @@ def build_tempvoice_panel_embed(
     emb = discord.Embed(
         title=f"{info} 𑁉 TEMP-VOICE PANEL",
         description=desc,
-        color=_color(settings),
+        color=_color(settings, guild),
     )
     emb.set_thumbnail(url=owner.display_avatar.url)
-    _footer(emb, settings)
+    _footer(emb, settings, guild)
     return emb
 
 
@@ -82,7 +89,7 @@ def build_tempvoice_invite_embed(
     emb = discord.Embed(
         title=f"{love} 𑁉 VOICE-EINLADUNG",
         description=desc,
-        color=_color(settings),
+        color=_color(settings, guild),
     )
-    _footer(emb, settings)
+    _footer(emb, settings, guild)
     return emb

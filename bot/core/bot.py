@@ -24,14 +24,19 @@ from bot.modules.giveaways.cogs.giveaway_listener import GiveawayListener
 from bot.modules.giveaways.services.giveaway_service import GiveawayService
 from bot.modules.polls.cogs.poll_commands import PollCommands
 from bot.modules.polls.services.poll_service import PollService
+from bot.modules.news.cogs.news_commands import NewsCommands
+from bot.modules.news.services.news_service import NewsService
 
 from bot.modules.moderation.cogs.moderation_commands import ModerationCommands  
 from bot.modules.logs.cogs.modlog_listener import ModLogListener
 from bot.modules.logs.cogs.channel_role_log_listener import ChannelRoleLogListener
 from bot.modules.applications.cogs.application_commands import ApplicationCommands
+from bot.modules.applications.services.application_service import ApplicationService
+from bot.modules.applications.views.application_panel import ApplicationPanelView
 from bot.modules.tempvoice.cogs.tempvoice_listener import TempVoiceListener
 from bot.modules.tempvoice.cogs.tempvoice_commands import TempVoiceCommands
 from bot.modules.tempvoice.services.tempvoice_service import TempVoiceService
+from bot.modules.tickets.views.support_panel import SupportPanelView
 
 from bot.core.presence import PresenceRotator
 from bot.modules.logs.forum_log_service import ForumLogService
@@ -65,6 +70,8 @@ class StarryBot(commands.Bot):
         self.giveaway_service = GiveawayService(self, self.settings, self.db, self.logger)
         self.poll_service = PollService(self, self.settings, self.db, self.logger)
         self.tempvoice_service = TempVoiceService(self, self.settings, self.db, self.logger)
+        self.news_service = NewsService(self, self.settings, self.db, self.logger)
+        self.application_service = ApplicationService(self, self.settings, self.db, self.logger)
 
         self.forum_logs = ForumLogService(self, self.settings, self.db)
         self._boot_done = False
@@ -74,6 +81,7 @@ class StarryBot(commands.Bot):
         self.backup_autosave_loop.start()
         self.birthday_loop.start()
         self.giveaway_loop.start()
+        self.news_loop.start()
 
     async def setup_hook(self):
         await self.add_cog(TicketDMListener(self))
@@ -91,6 +99,7 @@ class StarryBot(commands.Bot):
         await self.add_cog(PollCommands(self))
         await self.add_cog(TempVoiceListener(self))
         await self.add_cog(TempVoiceCommands(self))
+        await self.add_cog(NewsCommands(self))
 
         await self.add_cog(ModerationCommands(self))
         await self.add_cog(ModLogListener(self))
@@ -99,20 +108,16 @@ class StarryBot(commands.Bot):
 
         self.add_view(SummaryView(self.ticket_service, ticket_id=0, status="open"))
         self.add_dynamic_items(RatingButton)
+        self.add_view(ApplicationPanelView())
+        self.add_view(SupportPanelView())
 
         @self.tree.error
         async def on_app_command_error(interaction: discord.Interaction, error: app_commands.AppCommandError):
             await self._handle_app_command_error(interaction, error)
 
-        guild_id = self.settings.get_int("bot.guild_id")
-        if guild_id:
-            guild = discord.Object(id=guild_id)
-            self.tree.copy_global_to(guild=guild)
-            await self.tree.sync(guild=guild)
-            self.presence = PresenceRotator(self, self.db, interval_seconds=20)
-            self.presence.start()
-        else:
-            await self.tree.sync()
+        await self.tree.sync()
+        self.presence = PresenceRotator(self, self.db, interval_seconds=20)
+        self.presence.start()
 
     @tasks.loop(seconds=2.0)
     async def reload_settings_loop(self):
@@ -129,37 +134,30 @@ class StarryBot(commands.Bot):
 
     @tasks.loop(seconds=600.0)
     async def backup_autosave_loop(self):
-        if not self.settings.get_bool("backup.enabled", True):
-            return
-        if not self.settings.get_bool("backup.auto_save_enabled", False):
-            return
-        guild_id = self.settings.get_int("bot.guild_id")
-        if not guild_id:
-            return
-        guild = self.get_guild(guild_id)
-        if not guild:
-            return
-        interval_hours = float(self.settings.get("backup.auto_save_interval_hours", 24) or 24)
-        last = self.settings.get("backup.last_auto_save_at", None)
         now = datetime.now(timezone.utc)
-        if last:
+        for guild in list(self.guilds):
+            if not self.settings.get_guild_bool(guild.id, "backup.enabled", True):
+                continue
+            if not self.settings.get_guild_bool(guild.id, "backup.auto_save_enabled", False):
+                continue
+            interval_hours = float(self.settings.get_guild(guild.id, "backup.auto_save_interval_hours", 24) or 24)
+            last = self.settings.get_guild(guild.id, "backup.last_auto_save_at", None)
+            if last:
+                try:
+                    last_dt = datetime.fromisoformat(str(last))
+                except Exception:
+                    last_dt = None
+                if last_dt and (now - last_dt).total_seconds() < interval_hours * 3600:
+                    continue
+            name = self.settings.get_guild(guild.id, "backup.auto_save_name", "autosave")
             try:
-                last_dt = datetime.fromisoformat(str(last))
+                await self.backup_service.create_backup(guild, name=f"{name}-{now.strftime('%Y%m%d-%H%M')}")
+                await self.settings.set_guild_override(self.db, guild.id, "backup.last_auto_save_at", now.isoformat())
             except Exception:
-                last_dt = None
-            if last_dt and (now - last_dt).total_seconds() < interval_hours * 3600:
-                return
-        name = self.settings.get("backup.auto_save_name", "autosave")
-        try:
-            await self.backup_service.create_backup(guild, name=f"{name}-{now.strftime('%Y%m%d-%H%M')}")
-            await self.settings.set_override("backup.last_auto_save_at", now.isoformat())
-        except Exception:
-            pass
+                pass
 
     @tasks.loop(seconds=30.0)
     async def birthday_loop(self):
-        if not self.settings.get_bool("birthday.enabled", True):
-            return
         try:
             await self.birthday_service.tick_midnight()
         except Exception:
@@ -167,52 +165,59 @@ class StarryBot(commands.Bot):
 
     @tasks.loop(seconds=30.0)
     async def giveaway_loop(self):
-        if not self.settings.get_bool("giveaway.enabled", True):
-            return
         try:
             await self.giveaway_service.tick()
         except Exception:
             pass
 
+    @tasks.loop(seconds=60.0)
+    async def news_loop(self):
+        try:
+            await self.news_service.tick()
+        except Exception:
+            pass
+
     @reload_settings_loop.error
     async def reload_settings_loop_error(self, error: Exception):
-        await self._emit_bot_error("reload_settings_loop", error, extra=None)
+            await self._emit_bot_error("reload_settings_loop", error, extra=None, guild=None)
 
     @ticket_automation_loop.error
     async def ticket_automation_loop_error(self, error: Exception):
-        await self._emit_bot_error("ticket_automation_loop", error, extra=None)
+            await self._emit_bot_error("ticket_automation_loop", error, extra=None, guild=None)
 
     @backup_autosave_loop.error
     async def backup_autosave_loop_error(self, error: Exception):
-        await self._emit_bot_error("backup_autosave_loop", error, extra=None)
+            await self._emit_bot_error("backup_autosave_loop", error, extra=None, guild=None)
 
     @birthday_loop.error
     async def birthday_loop_error(self, error: Exception):
-        await self._emit_bot_error("birthday_loop", error, extra=None)
+            await self._emit_bot_error("birthday_loop", error, extra=None, guild=None)
 
     @giveaway_loop.error
     async def giveaway_loop_error(self, error: Exception):
-        await self._emit_bot_error("giveaway_loop", error, extra=None)
+            await self._emit_bot_error("giveaway_loop", error, extra=None, guild=None)
+
+    @news_loop.error
+    async def news_loop_error(self, error: Exception):
+            await self._emit_bot_error("news_loop", error, extra=None, guild=None)
 
     async def on_ready(self):
         if self._boot_done:
             return
         self._boot_done = True
         await self.forum_logs.start()
-        guild_id = self.settings.get_int("bot.guild_id")
-        if guild_id:
-            guild = self.get_guild(guild_id)
-            if guild and self.user_stats_service:
+        for guild in list(self.guilds):
+            if self.user_stats_service:
                 try:
                     await self.user_stats_service.seed_voice_sessions(guild)
                 except Exception:
                     pass
-            if guild and self.user_stats_service:
+            if self.user_stats_service:
                 try:
                     await self.user_stats_service.ensure_roles(guild)
                 except Exception:
                     pass
-            if guild and self.birthday_service:
+            if self.birthday_service:
                 try:
                     await self.birthday_service.ensure_roles(guild)
                 except Exception:
@@ -222,7 +227,7 @@ class StarryBot(commands.Bot):
         import sys
         err = sys.exc_info()[1]
         if err:
-            await self._emit_bot_error(f"event:{event_method}", err, extra={"args": len(args)})
+            await self._emit_bot_error(f"event:{event_method}", err, extra={"args": len(args)}, guild=None)
 
     async def _handle_app_command_error(self, interaction: discord.Interaction, error: app_commands.AppCommandError):
         extra = {
@@ -231,7 +236,7 @@ class StarryBot(commands.Bot):
             "channel": f"{getattr(interaction.channel,'id',0)}",
             "command": getattr(getattr(interaction, "command", None), "name", None) or "unknown",
         }
-        await self._emit_bot_error("app_command_error", error, extra=extra)
+        await self._emit_bot_error("app_command_error", error, extra=extra, guild=interaction.guild)
 
         try:
             if interaction.response.is_done():
@@ -241,14 +246,12 @@ class StarryBot(commands.Bot):
         except Exception:
             pass
 
-    async def _emit_bot_error(self, where: str, error: BaseException, extra: dict | None):
-        guild_id = self.settings.get_int("bot.guild_id")
-        guild = self.get_guild(guild_id) if guild_id else None
+    async def _emit_bot_error(self, where: str, error: BaseException, extra: dict | None, guild: discord.Guild | None):
         emb = build_bot_error_embed(self.settings, guild, where, error, extra=extra)
 
         try:
-            if self.forum_logs:
-                await self.forum_logs.emit("bot_errors", emb)
+            if self.forum_logs and guild:
+                await self.forum_logs.emit(guild, "bot_errors", emb)
         except Exception:
             pass
 
