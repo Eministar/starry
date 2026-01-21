@@ -1080,6 +1080,33 @@ class Database:
         row = await cur.fetchone()
         return int(row[0])
 
+    async def get_application(self, app_id: int):
+        cur = await self._conn.execute("""
+        SELECT id, guild_id, user_id, thread_id, status, created_at, closed_at
+        FROM applications
+        WHERE id = ?
+        LIMIT 1;
+        """, (int(app_id),))
+        return await cur.fetchone()
+
+    async def get_application_by_thread(self, guild_id: int, thread_id: int):
+        cur = await self._conn.execute("""
+        SELECT id, user_id, status
+        FROM applications
+        WHERE guild_id = ? AND thread_id = ?
+        ORDER BY id DESC
+        LIMIT 1;
+        """, (int(guild_id), int(thread_id)))
+        return await cur.fetchone()
+
+    async def set_application_status(self, app_id: int, status: str):
+        closed_at = await self.now_iso() if status and status != "open" else None
+        await self._conn.execute(
+            "UPDATE applications SET status = ?, closed_at = ? WHERE id = ?;",
+            (str(status), closed_at, int(app_id)),
+        )
+        await self._conn.commit()
+
     async def list_applications(self, limit: int = 200):
         cur = await self._conn.execute("""
         SELECT id, user_id, thread_id, status, created_at, closed_at

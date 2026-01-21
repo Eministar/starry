@@ -33,6 +33,7 @@ from bot.modules.logs.cogs.channel_role_log_listener import ChannelRoleLogListen
 from bot.modules.applications.cogs.application_commands import ApplicationCommands
 from bot.modules.applications.services.application_service import ApplicationService
 from bot.modules.applications.views.application_panel import ApplicationPanelView
+from bot.modules.applications.views.application_decision import ApplicationDecisionButton
 from bot.modules.tempvoice.cogs.tempvoice_listener import TempVoiceListener
 from bot.modules.tempvoice.cogs.tempvoice_commands import TempVoiceCommands
 from bot.modules.tempvoice.services.tempvoice_service import TempVoiceService
@@ -108,6 +109,7 @@ class StarryBot(commands.Bot):
 
         self.add_view(SummaryView(self.ticket_service, ticket_id=0, status="open"))
         self.add_dynamic_items(RatingButton)
+        self.add_dynamic_items(ApplicationDecisionButton)
         self.add_view(ApplicationPanelView())
         self.add_view(SupportPanelView())
 

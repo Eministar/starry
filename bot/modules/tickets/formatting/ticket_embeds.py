@@ -25,10 +25,15 @@ def _color(settings, guild: discord.Guild | None):
 def _footer(emb: discord.Embed, settings, guild: discord.Guild | None):
     if guild:
         ft = settings.get_guild(guild.id, "design.footer_text", None)
+        bot_member = getattr(guild, "me", None)
     else:
         ft = settings.get("design.footer_text", None)
+        bot_member = None
     if ft:
-        emb.set_footer(text=str(ft))
+        if bot_member:
+            emb.set_footer(text=bot_member.display_name, icon_url=bot_member.display_avatar.url)
+        else:
+            emb.set_footer(text=str(ft))
 
 
 def build_summary_embed(
@@ -317,11 +322,12 @@ def build_support_panel_embed(
     lifebuoy = em(settings, "lifebuoy", guild) or "🛟"
     arrow2 = em(settings, "arrow2", guild) or "»"
     stats = em(settings, "stats", guild) or "📈"
+    sparkles = em(settings, "sparkles", guild) or "✨"
     emb = discord.Embed(
         title=f"{lifebuoy} 𑁉 SUPPORT-PANEL",
         description=(
-            f"{arrow2} Schnell Hilfe bekommen - direkt, strukturiert und nachvollziehbar.\n\n"
-            "Klick unten auf den Button, beschreibe dein Anliegen, und unser Team meldet sich so schnell wie moeglich."
+            f"{arrow2} Hilfe in Minuten – klar, strukturiert und persönlich.\n\n"
+            f"{sparkles} **Jetzt Ticket eröffnen** und dein Anliegen direkt beschreiben."
         ),
         color=_color(settings, guild),
     )
@@ -329,8 +335,8 @@ def build_support_panel_embed(
         name="So funktioniert es",
         value=(
             "1) Button klicken\n"
-            "2) Ich schicke dir eine DM\n"
-            "3) Schreib dein Anliegen\n"
+            "2) Du bekommst eine DM\n"
+            "3) Anliegen beschreiben\n"
             "4) Team antwortet im Ticket"
         ),
         inline=False,

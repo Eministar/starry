@@ -53,6 +53,26 @@ class ApplicationCommands(commands.Cog):
         await self.service.start_dm_flow(interaction.user, interaction.guild)
         await interaction.response.send_message("Ich habe dir eine DM geschickt. Bitte beantworte dort die Fragen.", ephemeral=True)
 
+    @app_commands.command(name="ask", description="💬 𑁉 Rückfrage zur Bewerbung stellen")
+    @app_commands.describe(user="User der die Rückfrage erhalten soll", frage="Die Rückfrage, die per DM gesendet wird")
+    async def application_ask(self, interaction: discord.Interaction, user: discord.User, frage: str):
+        if not interaction.guild or not isinstance(interaction.user, discord.Member):
+            return await interaction.response.send_message("Nur im Server nutzbar.", ephemeral=True)
+        if not is_staff(self.bot.settings, interaction.user):
+            return await interaction.response.send_message("Keine Rechte.", ephemeral=True)
+        ok, err = await self.service.send_followup_question(interaction, user, frage)
+        if ok:
+            return await interaction.response.send_message("Rückfrage gesendet.", ephemeral=True)
+        msg = {
+            "guild_only": "Nur im Server nutzbar.",
+            "no_perms": "Keine Rechte.",
+            "thread_only": "Nur im Bewerbungs-Thread nutzbar.",
+            "application_missing": "Keine Bewerbung für diesen Thread gefunden.",
+            "user_mismatch": "Der User passt nicht zur Bewerbung in diesem Thread.",
+            "question_missing": "Bitte eine Frage angeben.",
+        }.get(err, f"Aktion fehlgeschlagen: {err}")
+        return await interaction.response.send_message(msg, ephemeral=True)
+
     application_panel = app_commands.Group(name="applicationpanel", description="📝 𑁉 Bewerbungs-Panel")
 
     @application_panel.command(name="send", description="📝 𑁉 Bewerbungs-Panel senden")

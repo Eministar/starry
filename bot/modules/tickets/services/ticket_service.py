@@ -437,7 +437,11 @@ class TicketService:
         emb = discord.Embed(title=title, description=desc, color=color)
         emb.set_author(name=staff.display_name, icon_url=staff.display_avatar.url)
         if ft:
-            emb.set_footer(text=str(ft))
+            bot_member = getattr(guild, "me", None)
+            if bot_member:
+                emb.set_footer(text=bot_member.display_name, icon_url=bot_member.display_avatar.url)
+            else:
+                emb.set_footer(text=str(ft))
 
         try:
             await user.send(embed=emb)
@@ -658,7 +662,7 @@ class TicketService:
         if not isinstance(message.channel, discord.Thread):
             return
 
-        forum_id = self._gi(message.guild.id, "bot.forum_channel_id")
+        forum_id = self._gi(interaction.guild.id, "bot.forum_channel_id")
         parent = getattr(message.channel, "parent", None)
         if not parent or getattr(parent, "id", 0) != forum_id:
             return
@@ -724,7 +728,7 @@ class TicketService:
         if not thread:
             return await _ephemeral(interaction, "Nur im Ticket-Thread.")
 
-        forum_id = self._gi(message.guild.id, "bot.forum_channel_id")
+        forum_id = self._gi(interaction.guild.id, "bot.forum_channel_id")
         parent = getattr(thread, "parent", None)
         if not parent or getattr(parent, "id", 0) != forum_id:
             return await _ephemeral(interaction, "Nur im Ticket-Thread.")
@@ -817,7 +821,7 @@ class TicketService:
         if not thread:
             return await _ephemeral(interaction, "Nur im Ticket-Thread.")
 
-        forum_id = self._gi(message.guild.id, "bot.forum_channel_id")
+        forum_id = self._gi(interaction.guild.id, "bot.forum_channel_id")
         parent = getattr(thread, "parent", None)
         if not parent or getattr(parent, "id", 0) != forum_id:
             return await _ephemeral(interaction, "Nur im Ticket-Thread.")
@@ -851,7 +855,7 @@ class TicketService:
         if not thread:
             return await _ephemeral(interaction, "Nur im Ticket-Thread.")
 
-        forum_id = self._gi(message.guild.id, "bot.forum_channel_id")
+        forum_id = self._gi(interaction.guild.id, "bot.forum_channel_id")
         parent = getattr(thread, "parent", None)
         if not parent or getattr(parent, "id", 0) != forum_id:
             return await _ephemeral(interaction, "Nur im Ticket-Thread.")
@@ -1099,7 +1103,7 @@ class TicketService:
         if not thread:
             return await _ephemeral(interaction, "Nur im Ticket-Thread.")
 
-        forum_id = self._gi(message.guild.id, "bot.forum_channel_id")
+        forum_id = self._gi(interaction.guild.id, "bot.forum_channel_id")
         parent = getattr(thread, "parent", None)
         if not parent or getattr(parent, "id", 0) != forum_id:
             return await _ephemeral(interaction, "Nur im Ticket-Thread.")

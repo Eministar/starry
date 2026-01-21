@@ -25,10 +25,15 @@ def _color(settings, guild: discord.Guild | None) -> int:
 def _footer(emb: discord.Embed, settings, guild: discord.Guild | None):
     if guild:
         ft = settings.get_guild(guild.id, "design.footer_text", None)
+        bot_member = getattr(guild, "me", None)
     else:
         ft = settings.get("design.footer_text", None)
+        bot_member = None
     if ft:
-        emb.set_footer(text=str(ft))
+        if bot_member:
+            emb.set_footer(text=bot_member.display_name, icon_url=bot_member.display_avatar.url)
+        else:
+            emb.set_footer(text=str(ft))
 
 
 def _cut(s: str | None, n: int) -> str:
