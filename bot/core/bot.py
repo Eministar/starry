@@ -27,6 +27,8 @@ from bot.modules.polls.services.poll_service import PollService
 from bot.modules.news.cogs.news_commands import NewsCommands
 from bot.modules.news.services.news_service import NewsService
 from bot.modules.placeholders.services.placeholder_service import PlaceholderService
+from bot.modules.welcome.cogs.welcome_listener import WelcomeListener
+from bot.modules.welcome.services.welcome_service import WelcomeService
 
 from bot.modules.moderation.cogs.moderation_commands import ModerationCommands  
 from bot.modules.logs.cogs.modlog_listener import ModLogListener
@@ -75,6 +77,7 @@ class StarryBot(commands.Bot):
         self.news_service = NewsService(self, self.settings, self.db, self.logger)
         self.application_service = ApplicationService(self, self.settings, self.db, self.logger)
         self.placeholder_service = PlaceholderService(self, self.settings, self.db, self.logger)
+        self.welcome_service = WelcomeService(self, self.settings, self.db, self.logger)
 
         self.forum_logs = ForumLogService(self, self.settings, self.db)
         self._boot_done = False
@@ -104,6 +107,7 @@ class StarryBot(commands.Bot):
         await self.add_cog(TempVoiceListener(self))
         await self.add_cog(TempVoiceCommands(self))
         await self.add_cog(NewsCommands(self))
+        await self.add_cog(WelcomeListener(self))
 
         await self.add_cog(ModerationCommands(self))
         await self.add_cog(ModLogListener(self))

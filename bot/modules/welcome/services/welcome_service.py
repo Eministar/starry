@@ -1,0 +1,104 @@
+import random
+import discord
+
+
+class WelcomeService:
+    def __init__(self, bot: discord.Client, settings, db, logger):
+        self.bot = bot
+        self.settings = settings
+        self.db = db
+        self.logger = logger
+
+    def _enabled(self, guild_id: int) -> bool:
+        return bool(self.settings.get_guild_bool(guild_id, "welcome.enabled", True))
+
+    def _channel_id(self, guild_id: int) -> int:
+        return int(self.settings.get_guild_int(guild_id, "welcome.channel_id", 0) or 0)
+
+    def _small_text(self, guild_id: int) -> str:
+        return str(self.settings.get_guild(guild_id, "welcome.small_text", "👋 Willkommen bei uns,") or "").strip()
+
+    def _presets(self, guild_id: int) -> list[str]:
+        return self.settings.get_guild(guild_id, "welcome.presets", []) or []
+
+    def _role_ids(self, guild_id: int) -> list[int]:
+        raw = self.settings.get_guild(guild_id, "welcome.role_ids", []) or []
+        out = []
+        for v in raw:
+            try:
+                out.append(int(v))
+            except Exception:
+                pass
+        return out
+
+    def _embed_color(self, member: discord.Member | None) -> int:
+        try:
+            if member and int(member.color.value) != 0:
+                return int(member.color.value)
+        except Exception:
+            pass
+        v = str(self.settings.get_guild(member.guild.id, "design.accent_color", "#B16B91") or "").replace("#", "").strip()
+        try:
+            return int(v, 16)
+        except Exception:
+            return 0xB16B91
+
+    async def handle_member_join(self, member: discord.Member):
+        guild = member.guild
+        if not guild or not self._enabled(guild.id):
+            return
+        if member.bot:
+            return
+
+        ch_id = self._channel_id(guild.id)
+        if not ch_id:
+            return
+        ch = guild.get_channel(ch_id)
+        if not ch:
+            try:
+                ch = await self.bot.fetch_channel(int(ch_id))
+            except Exception:
+                ch = None
+        if not ch or not isinstance(ch, discord.abc.Messageable):
+            return
+
+        presets = self._presets(guild.id)
+        preset = random.choice(presets) if presets else "Schön, dass du da bist!"
+        member_count = guild.member_count or len(guild.members)
+
+        title = "👋 𑁉 WILLKOMMEN"
+        desc = (
+            f"{preset}\n\n"
+            f"┏`👤` - User: {member.mention}\n"
+            f"┣`🏠` - Server: **{guild.name}**\n"
+            f"┗`👥` - Members: **{member_count}**"
+        )
+        emb = discord.Embed(title=title, description=desc, color=self._embed_color(member))
+        emb.set_thumbnail(url=member.display_avatar.url)
+        footer = str(self.settings.get_guild(guild.id, "design.footer_text", "") or "").strip()
+        if footer:
+            emb.set_footer(text=footer)
+
+        small_text = self._small_text(guild.id)
+        if small_text:
+            try:
+                await ch.send(f"{small_text} {member.mention}")
+            except Exception:
+                pass
+        try:
+            await ch.send(embed=emb)
+        except Exception:
+            pass
+
+        role_ids = self._role_ids(guild.id)
+        if role_ids:
+            roles = []
+            for rid in role_ids:
+                role = guild.get_role(int(rid))
+                if role and role not in member.roles:
+                    roles.append(role)
+            if roles:
+                try:
+                    await member.add_roles(*roles, reason="Welcome roles")
+                except Exception:
+                    pass

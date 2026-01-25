@@ -2,6 +2,7 @@ import discord
 from discord import app_commands
 from discord.ext import commands
 from bot.core.perms import is_staff
+import asyncio
 
 
 class RolesCommands(commands.Cog):
@@ -46,3 +47,29 @@ class RolesCommands(commands.Cog):
             )
         except Exception as e:
             await interaction.followup.send(f"Rescan fehlgeschlagen: `{type(e).__name__}`", ephemeral=True)
+
+    @roles.command(name="mass-add", description="🧩 𑁉 Rolle an alle vergeben")
+    @app_commands.describe(role="Rolle, die alle bekommen sollen")
+    async def mass_add(self, interaction: discord.Interaction, role: discord.Role):
+        if not interaction.guild or not isinstance(interaction.user, discord.Member):
+            return await interaction.response.send_message("Nur im Server nutzbar.", ephemeral=True)
+        if not is_staff(self.bot.settings, interaction.user):
+            return await interaction.response.send_message("Keine Berechtigung.", ephemeral=True)
+        await interaction.response.send_message("Mass-Role läuft…", ephemeral=True)
+        added = 0
+        failed = 0
+        for member in interaction.guild.members:
+            if member.bot:
+                continue
+            if role in member.roles:
+                continue
+            try:
+                await member.add_roles(role, reason="Mass role add")
+                added += 1
+            except Exception:
+                failed += 1
+            await asyncio.sleep(0.2)
+        await interaction.followup.send(
+            f"Mass-Role fertig. Hinzugefügt: **{added}**, Fehler: **{failed}**",
+            ephemeral=True,
+        )

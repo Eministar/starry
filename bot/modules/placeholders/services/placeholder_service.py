@@ -44,6 +44,10 @@ class PlaceholderService:
             if not template or not target:
                 continue
             rendered = self._render(template, values)
+            if target in {"channel_name", "category_name"}:
+                rendered = rendered.strip()
+                if not rendered:
+                    continue
 
             if target == "channel_name":
                 cid = int(item.get("channel_id", 0) or 0)
