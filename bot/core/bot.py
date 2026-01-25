@@ -224,6 +224,11 @@ class StarryBot(commands.Bot):
                     await self.birthday_service.ensure_roles(guild)
                 except Exception:
                     pass
+        if self.poll_service:
+            try:
+                await self.poll_service.restore_views()
+            except Exception:
+                pass
 
     async def on_error(self, event_method: str, *args, **kwargs):
         import sys

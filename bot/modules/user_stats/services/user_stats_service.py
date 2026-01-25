@@ -79,15 +79,16 @@ class UserStatsService:
         return level, current_total, next_total
 
     def _vanity_match(self, member: discord.Member) -> bool:
-        needles = self.settings.get("user_stats.vanity_status_contains", []) or []
+        needles = self.settings.get_guild(member.guild.id, "user_stats.vanity_status_contains", []) or []
         needles = [str(n).lower() for n in needles if str(n).strip()]
         return self._status_contains(member, needles)
 
-    def _role_rules(self):
-        return self.settings.get("user_stats.roles", []) or []
+    def _role_rules(self, guild_id: int):
+        return self.settings.get_guild(int(guild_id), "user_stats.roles", []) or []
 
-    def _level_roles(self):
-        raw = self.settings.get("user_stats.level_roles", {}) or {}
+    def _level_roles(self, guild_id: int | None = None):
+        raw = self.settings.get_guild(int(guild_id), "user_stats.level_roles", {}) if guild_id else self.settings.get("user_stats.level_roles", {})
+        raw = raw or {}
         out = {}
         for k, v in raw.items():
             try:
@@ -104,7 +105,7 @@ class UserStatsService:
         await self._sort_managed_roles(guild)
 
     async def _ensure_level_roles(self, guild: discord.Guild):
-        raw = self.settings.get("user_stats.level_roles", {}) or {}
+        raw = self.settings.get_guild(guild.id, "user_stats.level_roles", {}) or {}
         updated = dict(raw)
         created = []
         for level_str, role_id in raw.items():
@@ -115,7 +116,7 @@ class UserStatsService:
             rid = int(role_id or 0)
             role = guild.get_role(rid) if rid else None
             if not role:
-                name_fmt = str(self.settings.get("user_stats.level_role_name_format", "⭐ • LEVEL {level}") or "")
+                name_fmt = str(self.settings.get_guild(guild.id, "user_stats.level_role_name_format", "⭐ • LEVEL {level}") or "")
                 name = name_fmt.format(level=level)
                 try:
                     role = await guild.create_role(name=name, reason="Auto role (level)")
@@ -127,12 +128,11 @@ class UserStatsService:
             else:
                 updated[str(level)] = int(role.id)
         if updated != raw:
-            await self.settings.set_override("user_stats.level_roles", updated)
-            await self.db.set_guild_config(guild.id, "user_stats.level_roles", json.dumps(updated, ensure_ascii=False))
+            await self.settings.set_guild_override(self.db, guild.id, "user_stats.level_roles", updated)
             await self._announce_created_roles(guild, created, "Level-Rollen")
 
     async def _ensure_achievement_roles(self, guild: discord.Guild):
-        items = self.settings.get("achievements.items", []) or []
+        items = self.settings.get_guild(guild.id, "achievements.items", []) or []
         updated = []
         created = []
         for item in items:
@@ -142,7 +142,7 @@ class UserStatsService:
             if not role:
                 role_name = str(item.get("role_name", "") or "").strip()
                 if not role_name:
-                    prefix = str(self.settings.get("achievements.role_name_prefix", "🏆 • ") or "🏆 • ")
+                    prefix = str(self.settings.get_guild(guild.id, "achievements.role_name_prefix", "🏆 • ") or "🏆 • ")
                     role_name = f"{prefix}{item.get('name', item.get('code', 'Erfolg'))}"
                 try:
                     role = await guild.create_role(name=role_name, reason="Auto role (achievement)")
@@ -153,17 +153,16 @@ class UserStatsService:
                     created.append(role)
             updated.append(item)
         if updated != items:
-            await self.settings.set_override("achievements.items", updated)
-            await self.db.set_guild_config(guild.id, "achievements.items", json.dumps(updated, ensure_ascii=False))
+            await self.settings.set_guild_override(self.db, guild.id, "achievements.items", updated)
             await self._announce_created_roles(guild, created, "Erfolgsrollen")
 
     async def _sort_managed_roles(self, guild: discord.Guild):
         managed = []
         birthday_names = set()
-        birthday_role_name = str(self.settings.get("birthday.role_name", "🎂 • GEBURTSTAG") or "🎂 • GEBURTSTAG")
-        under_name = str(self.settings.get("birthday.under_18_role_name", "🧒 • U18") or "🧒 • U18")
-        adult_name = str(self.settings.get("birthday.adult_role_name", "🔞 • 18+") or "🔞 • 18+")
-        success_name = str(self.settings.get("birthday.success_role_name", "🏆 • GEBURTSTAG") or "🏆 • GEBURTSTAG")
+        birthday_role_name = str(self.settings.get_guild(guild.id, "birthday.role_name", "🎂 • GEBURTSTAG") or "🎂 • GEBURTSTAG")
+        under_name = str(self.settings.get_guild(guild.id, "birthday.under_18_role_name", "🧒 • U18") or "🧒 • U18")
+        adult_name = str(self.settings.get_guild(guild.id, "birthday.adult_role_name", "🔞 • 18+") or "🔞 • 18+")
+        success_name = str(self.settings.get_guild(guild.id, "birthday.success_role_name", "🏆 • GEBURTSTAG") or "🏆 • GEBURTSTAG")
         birthday_names.update([birthday_role_name, under_name, adult_name, success_name])
 
         for role in guild.roles:
@@ -171,12 +170,12 @@ class UserStatsService:
                 continue
             if role.name in birthday_names:
                 managed.append(role)
-        for item in self.settings.get("achievements.items", []) or []:
+        for item in self.settings.get_guild(guild.id, "achievements.items", []) or []:
             rid = int(item.get("role_id", 0) or 0)
             role = guild.get_role(rid) if rid else None
             if role and role not in managed:
                 managed.append(role)
-        for lvl, rid in self._level_roles().items():
+        for lvl, rid in self._level_roles(guild.id).items():
             role = guild.get_role(int(rid)) if rid else None
             if role and role not in managed:
                 managed.append(role)
@@ -203,7 +202,7 @@ class UserStatsService:
     async def _announce_created_roles(self, guild: discord.Guild, roles: list[discord.Role], title: str):
         if not roles:
             return
-        ch_id = self.settings.get_int("roles.announce_channel_id") or self.settings.get_int("bot.log_channel_id")
+        ch_id = self.settings.get_guild_int(guild.id, "roles.announce_channel_id") or self.settings.get_guild_int(guild.id, "bot.log_channel_id")
         if not ch_id:
             return
         ch = guild.get_channel(ch_id)
@@ -249,7 +248,7 @@ class UserStatsService:
             days_on_server = int((datetime.now(timezone.utc) - member.joined_at).total_seconds() // 86400)
         vanity_match = self._vanity_match(member)
 
-        for rule in self._role_rules():
+        for rule in self._role_rules(member.guild.id):
             role_id = int(rule.get("role_id", 0) or 0)
             if not role_id:
                 continue
@@ -274,7 +273,7 @@ class UserStatsService:
 
             await self._apply_role(member, role_id, ok)
 
-        level_roles = self._level_roles()
+        level_roles = self._level_roles(member.guild.id)
         user_level = int(stats.get("level", 0))
         eligible_levels = sorted([int(lvl) for lvl in level_roles.keys() if int(lvl) <= user_level])
         target_level = eligible_levels[-1] if eligible_levels else None
@@ -309,7 +308,7 @@ class UserStatsService:
         return False
 
     async def _post_levelup(self, member: discord.Member, level: int, xp: int):
-        channel_id = self.settings.get_int("user_stats.levelup_channel_id")
+        channel_id = self.settings.get_guild_int(member.guild.id, "user_stats.levelup_channel_id")
         if not channel_id:
             return
         ch = member.guild.get_channel(channel_id)
@@ -325,7 +324,7 @@ class UserStatsService:
         if next_total > current_total:
             pct = int(((xp - current_total) / (next_total - current_total)) * 100)
         roles_remaining = 0
-        for rule in self._role_rules():
+        for rule in self._role_rules(member.guild.id):
             role_id = int(rule.get("role_id", 0) or 0)
             if role_id and not member.get_role(role_id):
                 roles_remaining += 1
@@ -336,7 +335,7 @@ class UserStatsService:
         book = em(self.settings, "book", member.guild) or "📚"
 
         next_role_level = None
-        for lvl in sorted(self._level_roles().keys()):
+        for lvl in sorted(self._level_roles(member.guild.id).keys()):
             if int(lvl) > int(level):
                 next_role_level = int(lvl)
                 break
@@ -469,7 +468,7 @@ class UserStatsService:
         }
 
     async def _check_achievements(self, member: discord.Member, stats: dict):
-        items = self.settings.get("achievements.items", []) or []
+        items = self.settings.get_guild(member.guild.id, "achievements.items", []) or []
         if not items:
             return
         rows = await self.db.list_achievements(member.guild.id, member.id)
@@ -567,17 +566,17 @@ class UserStatsService:
 
         ach_rows = await self.db.list_achievements(member.guild.id, member.id)
         achieved = len(ach_rows)
-        total_achievements = len(self.settings.get("achievements.items", []) or [])
+        total_achievements = len(self.settings.get_guild(member.guild.id, "achievements.items", []) or [])
 
         role_lines = []
         total_members = max(1, member.guild.member_count or 1)
-        for rule in self._role_rules():
+        for rule in self._role_rules(member.guild.id):
             role_id = int(rule.get("role_id", 0) or 0)
             role = member.guild.get_role(role_id) if role_id else None
             if role and role in member.roles:
                 role_pct = int((len(role.members) / total_members) * 100)
                 role_lines.append(f"• {role.mention} ({role_pct}%)")
-        for lvl, role_id in sorted(self._level_roles().items()):
+        for lvl, role_id in sorted(self._level_roles(member.guild.id).items()):
             role = member.guild.get_role(role_id)
             if role and role in member.roles:
                 role_pct = int((len(role.members) / total_members) * 100)
@@ -603,7 +602,7 @@ class UserStatsService:
         return embed
 
     async def build_achievements_embed(self, member: discord.Member, page: int = 1, per_page: int = 8):
-        items = self.settings.get("achievements.items", []) or []
+        items = self.settings.get_guild(member.guild.id, "achievements.items", []) or []
         total = len(items)
         total_pages = max(1, (total + per_page - 1) // per_page)
         page = max(1, min(page, total_pages))
@@ -714,7 +713,7 @@ class UserStatsService:
                 return int(member.color.value)
         except Exception:
             pass
-        v = str(self.settings.get("design.accent_color", "#B16B91") or "").replace("#", "").strip()
+        v = str(self.settings.get_guild(member.guild.id, "design.accent_color", "#B16B91") or "").replace("#", "").strip()
         try:
             return int(v, 16)
         except Exception:

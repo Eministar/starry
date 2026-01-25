@@ -79,9 +79,48 @@ class PollService:
             pass
         await interaction.response.send_message("Stimme gespeichert.", ephemeral=True)
 
+    async def restore_views(self):
+        rows = await self.db.list_open_polls()
+        for row in rows:
+            try:
+                poll_id, guild_id, channel_id, message_id, options_json = row
+            except Exception:
+                continue
+            if not message_id:
+                continue
+            try:
+                options = json.loads(options_json)
+            except Exception:
+                continue
+            custom_id = None
+            try:
+                guild = self.bot.get_guild(int(guild_id))
+                channel = None
+                if guild:
+                    channel = guild.get_channel(int(channel_id))
+                if not channel:
+                    channel = await self.bot.fetch_channel(int(channel_id))
+                if channel:
+                    msg = await channel.fetch_message(int(message_id))
+                    for row in getattr(msg, "components", []) or []:
+                        for child in getattr(row, "children", []) or []:
+                            cid = getattr(child, "custom_id", None)
+                            if cid:
+                                custom_id = str(cid)
+                                break
+                        if custom_id:
+                            break
+            except Exception:
+                custom_id = None
+            try:
+                view = PollView(self, int(poll_id), options, custom_id=custom_id)
+                self.bot.add_view(view, message_id=int(message_id))
+            except Exception:
+                pass
+
 
 class PollSelect(discord.ui.Select):
-    def __init__(self, service: PollService, poll_id: int, options: list[str]):
+    def __init__(self, service: PollService, poll_id: int, options: list[str], custom_id: str | None = None):
         self.service = service
         self.poll_id = int(poll_id)
         opts = [
@@ -93,6 +132,7 @@ class PollSelect(discord.ui.Select):
             options=opts[:25],
             min_values=1,
             max_values=1,
+            custom_id=custom_id or f"starry:poll:{self.poll_id}",
         )
 
     async def callback(self, interaction: discord.Interaction):
@@ -104,6 +144,6 @@ class PollSelect(discord.ui.Select):
 
 
 class PollView(discord.ui.View):
-    def __init__(self, service: PollService, poll_id: int, options: list[str]):
+    def __init__(self, service: PollService, poll_id: int, options: list[str], custom_id: str | None = None):
         super().__init__(timeout=None)
-        self.add_item(PollSelect(service, poll_id, options))
+        self.add_item(PollSelect(service, poll_id, options, custom_id=custom_id))

@@ -54,6 +54,35 @@ def _human_bytes(size: int | None) -> str:
         value /= 1024
     return f"{int(value)} B"
 
+def _is_image_attachment(attachment: discord.Attachment) -> bool:
+    ctype = str(getattr(attachment, "content_type", "") or "").lower()
+    if ctype.startswith("image/"):
+        return True
+    name = str(getattr(attachment, "filename", "") or "").lower()
+    return name.endswith((".png", ".jpg", ".jpeg", ".gif", ".webp", ".bmp"))
+
+def _split_attachments(attachments, limit: int = 8) -> tuple[list[str], list[str]]:
+    images: list[str] = []
+    others: list[str] = []
+    if not attachments:
+        return images, others
+    for att in list(attachments)[:limit]:
+        try:
+            url = att.url
+        except Exception:
+            continue
+        if _is_image_attachment(att):
+            images.append(url)
+        else:
+            others.append(url)
+    return images, others
+
+def _clean_reply_snippet(text: str, limit: int = 140) -> str:
+    if not text:
+        return ""
+    cleaned = str(text).replace("\n", " ").replace("»", "").strip()
+    return _truncate(cleaned, limit)
+
 
 def _parse_iso(ts: str | None) -> datetime | None:
     if not ts:
@@ -263,6 +292,56 @@ class TicketService:
             4: "Dringend",
         }
         return mapping.get(int(priority or 2), "Normal")
+
+    async def _resolve_reply_meta(self, message: discord.Message) -> tuple[str | None, str | None]:
+        ref = getattr(message, "reference", None)
+        if not ref or not getattr(ref, "message_id", None):
+            return None, None
+        ref_msg = ref.resolved if isinstance(ref.resolved, discord.Message) else None
+        if not ref_msg:
+            try:
+                ref_msg = await message.channel.fetch_message(int(ref.message_id))
+            except Exception:
+                return None, None
+        author = None
+        content = (ref_msg.content or "").strip()
+        if ref_msg.embeds:
+            emb = ref_msg.embeds[0]
+            if not content and emb.description:
+                content = emb.description
+            if emb.author and emb.author.name:
+                author = emb.author.name
+        if not author and ref_msg.author:
+            author = getattr(ref_msg.author, "display_name", None) or getattr(ref_msg.author, "name", None)
+        if not content and ref_msg.attachments:
+            if any(_is_image_attachment(a) for a in ref_msg.attachments):
+                content = "[Bild]"
+            else:
+                content = "[Anhang]"
+        content = _clean_reply_snippet(content)
+        return author, content if content else None
+
+    async def _build_reply_line(self, message: discord.Message | None) -> str | None:
+        if not message:
+            return None
+        author, snippet = await self._resolve_reply_meta(message)
+        if not author and not snippet:
+            return None
+        if author and snippet:
+            return f"↪ Antwort auf **{author}**: {snippet}"
+        if author:
+            return f"↪ Antwort auf **{author}**"
+        return f"↪ Antwort auf: {snippet}"
+
+    def _build_image_embed(self, guild: discord.Guild | None, author: discord.User | discord.Member | None, url: str):
+        emb = discord.Embed(color=parse_int_color(self.settings, guild.id if guild else None))
+        emb.set_image(url=url)
+        if author:
+            try:
+                emb.set_author(name=author.display_name, icon_url=author.display_avatar.url)
+            except Exception:
+                pass
+        return emb
 
     async def _get_ticket_log_channel(self, guild: discord.Guild | None):
         log_id = self._gi(guild.id, "ticket.log_channel_id") if guild else 0
@@ -506,7 +585,7 @@ class TicketService:
                     thread = None
 
             if thread:
-                await self._post_user_message(guild, thread, message.author, message.content, message.attachments)
+                await self._post_user_message(guild, thread, message.author, message.content, message.attachments, source_message=message)
                 try:
                     now_iso = datetime.now(timezone.utc).isoformat()
                     await self.db.set_last_user_message(int(existing["ticket_id"]), now_iso)
@@ -621,7 +700,7 @@ class TicketService:
         except Exception:
             pass
 
-        await self._post_user_message(guild, thread, user, dm_message.content, dm_message.attachments)
+        await self._post_user_message(guild, thread, user, dm_message.content, dm_message.attachments, source_message=dm_message)
         try:
             now_iso = datetime.now(timezone.utc).isoformat()
             await self.db.set_last_user_message(int(ticket_id), now_iso)
@@ -639,15 +718,27 @@ class TicketService:
             {"ticket_id": int(ticket_id), "user_id": user.id, "thread_id": thread.id, "category": category_key},
         )
 
-    async def _post_user_message(self, guild: discord.Guild, thread: discord.Thread, user: discord.User, content: str, attachments):
+    async def _post_user_message(self, guild: discord.Guild, thread: discord.Thread, user: discord.User, content: str, attachments, source_message: discord.Message | None = None):
         text = (content or "").strip()
-        if attachments:
-            links = "\n".join([a.url for a in attachments][:8])
+        reply_line = await self._build_reply_line(source_message)
+
+        images, other_links = _split_attachments(attachments, limit=8)
+        if other_links:
+            links = "\n".join(other_links)
             if links:
                 text = (text + "\n\n" + links).strip()
+        if reply_line:
+            text = f"{reply_line}\n\n{text}".strip()
+
         text = _truncate(text, 3500) if text else " "
         emb = build_user_message_embed(self.settings, guild, user, text)
         await thread.send(embed=emb)
+
+        for url in images:
+            try:
+                await thread.send(embed=self._build_image_embed(guild, user, url))
+            except Exception:
+                pass
 
     async def handle_staff_message(self, message: discord.Message):
         if message.author.bot:
@@ -662,7 +753,7 @@ class TicketService:
         if not isinstance(message.channel, discord.Thread):
             return
 
-        forum_id = self._gi(interaction.guild.id, "bot.forum_channel_id")
+        forum_id = self._gi(message.guild.id, "bot.forum_channel_id")
         parent = getattr(message.channel, "parent", None)
         if not parent or getattr(parent, "id", 0) != forum_id:
             return
@@ -676,10 +767,15 @@ class TicketService:
             return
 
         text = (message.content or "").strip()
+        reply_line = await self._build_reply_line(message)
+
+        images: list[str] = []
         if self._gb(message.guild.id, "ticket.mirror_staff_attachments", True) and message.attachments:
-            links = "\n".join([a.url for a in message.attachments][:8])
-            if links:
-                text = (text + "\n\n" + links).strip()
+            images, other_links = _split_attachments(message.attachments, limit=8)
+            if other_links:
+                links = "\n".join(other_links)
+                if links:
+                    text = (text + "\n\n" + links).strip()
 
         text = _truncate(text, 3500) if text else " "
         uid = int(t["user_id"]) if t.get("user_id") else 0
@@ -696,11 +792,16 @@ class TicketService:
 
         dm_ok = False
         dm_error = None
-        emb = build_dm_staff_reply_embed(self.settings, message.guild, message.author, int(t["ticket_id"]), text)
+        emb = build_dm_staff_reply_embed(self.settings, message.guild, message.author, int(t["ticket_id"]), text, reply_line=reply_line)
         for pid in participant_ids:
             try:
                 user = await self.bot.fetch_user(int(pid))
                 await user.send(embed=emb)
+                for url in images:
+                    try:
+                        await user.send(embed=self._build_image_embed(message.guild, message.author, url))
+                    except Exception:
+                        pass
                 dm_ok = True
             except Exception as e:
                 dm_error = f"{type(e).__name__}: {e}"
@@ -716,6 +817,14 @@ class TicketService:
             "ticket_staff_reply",
             {"ticket_id": int(t["ticket_id"]), "staff_id": message.author.id, "user_id": int(uid), "dm_ok": dm_ok, "dm_error": dm_error, "recipients": participant_ids[:25]},
         )
+
+        try:
+            if dm_ok:
+                await message.add_reaction(em(self.settings, "green", message.guild) or "✅")
+            else:
+                await message.add_reaction(em(self.settings, "red", message.guild) or "❌")
+        except Exception:
+            pass
 
     async def toggle_claim(self, interaction: discord.Interaction):
         if not interaction.guild or not isinstance(interaction.user, discord.Member):

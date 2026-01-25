@@ -1068,6 +1068,14 @@ class Database:
         rows = await cur.fetchall()
         return [int(r[0]) for r in rows if r and r[0] is not None]
 
+    async def list_open_polls(self):
+        cur = await self._conn.execute("""
+        SELECT id, guild_id, channel_id, message_id, options_json
+        FROM polls
+        WHERE status = 'open';
+        """)
+        return await cur.fetchall()
+
     async def create_application(self, guild_id: int, user_id: int, thread_id: int, questions: list[str], answers: list[str]):
         created_at = await self.now_iso()
         await self._conn.execute("""

@@ -140,12 +140,13 @@ def build_dm_message_appended_embed(settings, guild: discord.Guild | None, ticke
     return emb
 
 
-def build_dm_staff_reply_embed(settings, guild: discord.Guild | None, staff: discord.Member, ticket_id: int, text: str):
+def build_dm_staff_reply_embed(settings, guild: discord.Guild | None, staff: discord.Member, ticket_id: int, text: str, reply_line: str | None = None):
     love = em(settings, "discord_love", guild)
     arrow2 = em(settings, "arrow2", guild)
 
+    reply_block = f"{reply_line}\n\n" if reply_line else ""
     desc = (
-        f"{arrow2} {text if text else ' '}\n\n"
+        f"{reply_block}{arrow2} {text if text else ' '}\n\n"
         f"┏`👤` - Teamer: **{staff.display_name}**\n"
         f"┗`📚` - Ticket-ID: `{ticket_id}`"
     )
