@@ -4,7 +4,6 @@ from discord.ext import commands
 
 from bot.modules.applications.services.application_service import ApplicationService
 from bot.modules.applications.views.application_panel import ApplicationPanelView
-from bot.modules.applications.formatting.application_embeds import build_application_panel_embed
 from bot.core.perms import is_staff
 
 
@@ -86,8 +85,7 @@ class ApplicationCommands(commands.Cog):
         if not isinstance(target, discord.abc.Messageable):
             return await interaction.response.send_message("Zielkanal ungültig.", ephemeral=True)
         stats = await self._build_application_panel_stats()
-        embed = build_application_panel_embed(self.bot.settings, interaction.guild, **stats)
-        await target.send(embed=embed, view=ApplicationPanelView())
+        await target.send(view=ApplicationPanelView(self.bot.settings, interaction.guild, stats))
         await interaction.response.send_message("Panel gesendet.", ephemeral=True)
 
     @commands.Cog.listener()

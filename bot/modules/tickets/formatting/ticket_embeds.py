@@ -355,3 +355,43 @@ def build_support_panel_embed(
         emb.set_thumbnail(url=guild.icon.url)
     _footer(emb, settings, guild)
     return emb
+
+
+def build_support_panel_container(
+    settings,
+    guild: discord.Guild | None,
+    total: int,
+    open_: int,
+    active: int,
+    button: discord.ui.Button,
+):
+    arrow2 = em(settings, "arrow2", guild) or "»"
+    lifebuoy = em(settings, "lifebuoy", guild) or "🛟"
+    sparkles = em(settings, "sparkles", guild) or "✨"
+    stats = em(settings, "stats", guild) or "📈"
+
+    header = f"**{lifebuoy} 𑁉 SUPPORT-PANEL**"
+    intro = f"{arrow2} Hilfe in Minuten – klar, strukturiert und persönlich."
+    cta = f"{sparkles} **Jetzt Ticket eröffnen** und dein Anliegen direkt beschreiben."
+    flow = (
+        "1) Button klicken\n"
+        "2) Du bekommst eine DM\n"
+        "3) Anliegen beschreiben\n"
+        "4) Team antwortet im Ticket"
+    )
+    stats_block = (
+        f"Tickets gesamt: **{total}**\n"
+        f"Offen: **{open_}**\n"
+        f"Aktive User (24h): **{active}**"
+    )
+
+    container = discord.ui.Container(accent_colour=_color(settings, guild))
+    container.add_item(discord.ui.TextDisplay(f"{header}\n{intro}\n\n{cta}"))
+    container.add_item(discord.ui.Separator())
+    container.add_item(discord.ui.TextDisplay(f"**So funktioniert es**\n{flow}"))
+    container.add_item(discord.ui.Separator())
+    container.add_item(discord.ui.TextDisplay(f"**{stats} Live-Stats**\n{stats_block}"))
+    row = discord.ui.ActionRow()
+    row.add_item(button)
+    container.add_item(row)
+    return container

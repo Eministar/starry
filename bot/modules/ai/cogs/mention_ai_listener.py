@@ -4,6 +4,7 @@ import discord
 from discord.ext import commands
 
 from bot.modules.ai.services.deepseek_service import DeepSeekService
+from bot.modules.ai.formatting.ai_views import build_limit_view
 
 
 class MentionAIListener(commands.Cog):
@@ -32,7 +33,8 @@ class MentionAIListener(commands.Cog):
         if not prompt:
             return
         if not self.service.can_consume(message.guild.id, message.author.id):
-            await message.reply("Dein Tageslimit (20) ist erreicht.", mention_author=False)
+            view = build_limit_view(self.bot.settings, message.guild, 20)
+            await message.reply(view=view, mention_author=False)
             return
         self.service.consume(message.guild.id, message.author.id)
         messages = self.service.build_messages(message.guild.id, message.author.id, prompt)

@@ -127,8 +127,8 @@ class StarryBot(commands.Bot):
         self.add_view(SummaryView(self.ticket_service, ticket_id=0, status="open"))
         self.add_dynamic_items(RatingButton)
         self.add_dynamic_items(ApplicationDecisionButton)
-        self.add_view(ApplicationPanelView())
-        self.add_view(SupportPanelView())
+        self.add_view(ApplicationPanelView(self.settings))
+        self.add_view(SupportPanelView(self.settings))
         self.add_view(WortPanelView(self.wzs_service))
         self.add_view(WortInfoView(self.wzs_service))
 

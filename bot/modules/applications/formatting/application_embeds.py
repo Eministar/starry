@@ -99,6 +99,44 @@ def build_application_panel_embed(
     return emb
 
 
+def build_application_panel_container(
+    settings,
+    guild: discord.Guild | None,
+    total: int,
+    open_: int,
+    button: discord.ui.Button,
+):
+    arrow2 = em(settings, "arrow2", guild) or "»"
+    pen = em(settings, "pen", guild) or "📝"
+    sparkles = em(settings, "sparkles", guild) or "✨"
+    info = em(settings, "info", guild) or "ℹ️"
+
+    header = f"**{pen} 𑁉 BEWERBUNGS-PANEL**"
+    intro = f"{arrow2} Du willst Teil des Teams werden? Starte deine Bewerbung direkt hier."
+    cta = f"{sparkles} **Jetzt bewerben** – kurz, strukturiert und im Design eures Servers."
+    flow = (
+        "1) Button klicken\n"
+        "2) Fragen beantworten\n"
+        "3) Wir prüfen die Bewerbung\n"
+        "4) Rückmeldung im Thread"
+    )
+    stats_block = (
+        f"Bewerbungen gesamt: **{total}**\n"
+        f"Offen: **{open_}**"
+    )
+
+    container = discord.ui.Container(accent_colour=_color(settings, guild))
+    container.add_item(discord.ui.TextDisplay(f"{header}\n{intro}\n\n{cta}"))
+    container.add_item(discord.ui.Separator())
+    container.add_item(discord.ui.TextDisplay(f"**Ablauf**\n{flow}"))
+    container.add_item(discord.ui.Separator())
+    container.add_item(discord.ui.TextDisplay(f"**{info} Live-Stats**\n{stats_block}"))
+    row = discord.ui.ActionRow()
+    row.add_item(button)
+    container.add_item(row)
+    return container
+
+
 def build_application_followup_dm_embed(
     settings,
     guild: discord.Guild | None,

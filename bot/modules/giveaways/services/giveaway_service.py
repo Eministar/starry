@@ -4,6 +4,7 @@ import re
 from datetime import datetime, timezone, timedelta
 import discord
 from bot.utils.emojis import em
+from bot.modules.giveaways.formatting.giveaway_views import build_giveaway_container
 
 
 class GiveawayService:
@@ -150,8 +151,8 @@ class GiveawayService:
             created_by=int(data["created_by"]),
         )
 
-        emb = await self.build_giveaway_embed(guild, giveaway_id)
-        msg = await channel.send(embed=emb)
+        view = await self.build_giveaway_view(guild, giveaway_id)
+        msg = await channel.send(view=view)
         try:
             await msg.add_reaction(self._join_emoji(guild))
         except Exception:
@@ -212,6 +213,32 @@ class GiveawayService:
         emb.set_footer(text=f"ID {giveaway_id}")
         return emb
 
+    async def build_giveaway_view(self, guild: discord.Guild, giveaway_id: int):
+        row = await self.db.get_giveaway(giveaway_id)
+        if not row:
+            return None
+        _, _, _, _, title, sponsor, description, end_at, winners, conditions_json, _, status, _ = row
+        conditions = json.loads(conditions_json) if conditions_json else {}
+        entries = await self.db.count_giveaway_entries(giveaway_id)
+        try:
+            end_dt = datetime.fromisoformat(str(end_at))
+        except Exception:
+            end_dt = None
+        data = {
+            "title": title,
+            "sponsor": sponsor,
+            "description": description,
+            "end_at": end_dt,
+            "winners": winners,
+            "entries": entries,
+            "conditions": self._format_conditions(conditions, guild),
+            "status": status,
+        }
+        join_button = GiveawayJoinButton(self, giveaway_id, disabled=str(status) != "open", emoji=self._join_emoji(guild))
+        view = discord.ui.LayoutView(timeout=None)
+        view.add_item(build_giveaway_container(self.settings, guild, data, join_button))
+        return view
+
     async def handle_join(self, interaction: discord.Interaction, giveaway_id: int):
         if not interaction.guild or not isinstance(interaction.user, discord.Member):
             return await interaction.response.send_message("Nur im Server nutzbar.", ephemeral=True)
@@ -227,8 +254,8 @@ class GiveawayService:
             return await interaction.response.send_message(err or "Nicht berechtigt.", ephemeral=True)
         await self.db.add_giveaway_entry(giveaway_id, interaction.user.id)
         try:
-            emb = await self.build_giveaway_embed(interaction.guild, giveaway_id)
-            await interaction.message.edit(embed=emb)
+            view = await self.build_giveaway_view(interaction.guild, giveaway_id)
+            await interaction.message.edit(view=view)
         except Exception:
             pass
         await interaction.response.send_message("Du bist dabei! 🎉", ephemeral=True)
@@ -283,9 +310,9 @@ class GiveawayService:
         if message_id:
             try:
                 msg = await ch.fetch_message(int(message_id))
-                emb = await self.build_giveaway_embed(guild, giveaway_id)
-                if emb:
-                    await msg.edit(embed=emb, view=None)
+                view = await self.build_giveaway_view(guild, giveaway_id)
+                if view:
+                    await msg.edit(view=view)
             except Exception:
                 pass
 
@@ -316,9 +343,25 @@ class GiveawayService:
         if message_id:
             try:
                 msg = await ch.fetch_message(int(message_id))
-                emb = await self.build_giveaway_embed(guild, giveaway_id)
-                if emb:
-                    await msg.edit(embed=emb, view=None)
+                view = await self.build_giveaway_view(guild, giveaway_id)
+                if view:
+                    await msg.edit(view=view)
             except Exception:
                 pass
         return True, None
+
+
+class GiveawayJoinButton(discord.ui.Button):
+    def __init__(self, service: GiveawayService, giveaway_id: int, disabled: bool = False, emoji: str | None = None):
+        super().__init__(
+            label="Teilnehmen",
+            style=discord.ButtonStyle.success,
+            custom_id=f"giveaway_join_{int(giveaway_id)}",
+            disabled=disabled,
+            emoji=str(emoji) if emoji else None,
+        )
+        self.service = service
+        self.giveaway_id = int(giveaway_id)
+
+    async def callback(self, interaction: discord.Interaction):
+        await self.service.handle_join(interaction, self.giveaway_id)

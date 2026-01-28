@@ -9,7 +9,10 @@ from discord.utils import format_dt
 from bot.utils.emojis import em
 
 
-def parse_hex_color(value: str, default: int = 0xB16B91) -> int:
+DEFAULT_COLOR = 0xB16B91
+
+
+def parse_hex_color(value: str, default: int = DEFAULT_COLOR) -> int:
     if not value:
         return default
     v = str(value).strip().replace("#", "")
@@ -19,7 +22,7 @@ def parse_hex_color(value: str, default: int = 0xB16B91) -> int:
         return default
 
 
-def _color(settings, guild: discord.Guild | None):
+def _color(settings, guild: discord.Guild | None) -> int:
     if guild:
         value = settings.get_guild(guild.id, "design.accent_color", "#B16B91")
     else:
@@ -41,6 +44,13 @@ def _footer(emb: discord.Embed, settings, guild: discord.Guild | None):
             emb.set_footer(text=str(ft))
 
 
+def _clip(text: str, limit: int) -> str:
+    t = str(text or "").strip()
+    if len(t) <= limit:
+        return t
+    return t[: max(0, limit - 3)].rstrip() + "..."
+
+
 @dataclass(frozen=True)
 class NewsItem:
     id: str
@@ -50,6 +60,10 @@ class NewsItem:
     image_url: str | None
     published_at: datetime | None
     source: str = "Tagesschau"
+    source_url: str | None = None
+    video_id: str | None = None
+    stats: dict | None = None
+    channel: dict | None = None
 
 
 def build_news_embed(settings, guild: discord.Guild | None, item: NewsItem) -> discord.Embed:
@@ -71,3 +85,69 @@ def build_news_embed(settings, guild: discord.Guild | None, item: NewsItem) -> d
         emb.set_image(url=item.image_url)
     _footer(emb, settings, guild)
     return emb
+
+
+def build_news_view(settings, guild: discord.Guild | None, item: NewsItem) -> discord.ui.LayoutView:
+    arrow2 = em(settings, "arrow2", guild) or "»"
+    info = em(settings, "info", guild) or "📰"
+
+    title = _clip(item.title, 150)
+    desc = _clip(item.description, 700)
+
+    header = f"**{info} 𑁉 NEWS-UPDATE**"
+    meta = [f"┏`📰` - Quelle: **{item.source}**"]
+    if item.published_at:
+        meta.append(f"┣`🗓️` - {format_dt(item.published_at, style='f')}")
+    meta.append(f"┗`🔗` - Link: {item.url}")
+
+    view = discord.ui.LayoutView(timeout=None)
+    container = discord.ui.Container(accent_colour=_color(settings, guild))
+    container.add_item(discord.ui.TextDisplay(f"{header}\n**{title}**"))
+    container.add_item(discord.ui.Separator())
+    container.add_item(discord.ui.TextDisplay(f"{arrow2} {desc}"))
+    container.add_item(discord.ui.Separator())
+    container.add_item(discord.ui.TextDisplay("\n".join(meta)))
+
+    if item.image_url:
+        try:
+            gallery = discord.ui.MediaGallery()
+            gallery.add_item(media=item.image_url)
+            if item.channel:
+                avatar = str(item.channel.get("avatar_url") or "").strip()
+                if avatar:
+                    gallery.add_item(media=avatar, description="Channel")
+            container.add_item(discord.ui.Separator())
+            container.add_item(gallery)
+        except Exception:
+            pass
+
+    if item.video_id:
+        stats_text = "Stats werden stündlich aktualisiert."
+        if item.stats:
+            views = _fmt_number(item.stats.get("views"))
+            likes = _fmt_number(item.stats.get("likes"))
+            stats_text = f"┏`👀` - Aufrufe: **{views}**\n┗`👍` - Likes: **{likes}**"
+        container.add_item(discord.ui.Separator())
+        container.add_item(discord.ui.TextDisplay(f"**📊 YouTube Stats**\n{stats_text}"))
+
+    if item.channel:
+        name = str(item.channel.get("name") or "").strip()
+        link = str(item.channel.get("url") or "").strip()
+        subs = _fmt_number(item.channel.get("subscribers"))
+        footer = f"Kanal: **{name or '—'}**"
+        if link:
+            footer = f"Kanal: [{name or 'Link'}]({link})"
+        footer += f" • Abos: **{subs}**"
+        container.add_item(discord.ui.Separator())
+        container.add_item(discord.ui.TextDisplay(footer))
+
+    view.add_item(container)
+    return view
+
+
+def _fmt_number(value: int | str | None) -> str:
+    try:
+        n = int(value or 0)
+    except Exception:
+        return "0"
+    return f"{n:,}".replace(",", ".")

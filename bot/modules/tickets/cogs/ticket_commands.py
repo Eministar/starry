@@ -4,7 +4,6 @@ from discord.ext import commands
 
 from bot.modules.tickets.services.ticket_service import TicketService
 from bot.modules.tickets.views.support_panel import SupportPanelView
-from bot.modules.tickets.formatting.ticket_embeds import build_support_panel_embed
 from bot.core.perms import is_staff
 
 
@@ -91,8 +90,7 @@ class TicketCommands(commands.Cog):
         if not isinstance(target, discord.abc.Messageable):
             return await interaction.response.send_message("Zielkanal ungültig.", ephemeral=True)
         stats = await self._build_support_panel_stats()
-        embed = build_support_panel_embed(self.bot.settings, interaction.guild, **stats)
-        await target.send(embed=embed, view=SupportPanelView())
+        await target.send(view=SupportPanelView(self.bot.settings, interaction.guild, stats))
         await interaction.response.send_message("Panel gesendet.", ephemeral=True)
 
     async def _fetch_count(self, query: str) -> int:

@@ -26,9 +26,8 @@ class PollService:
 
     async def create_poll(self, guild: discord.Guild, channel: discord.TextChannel, question: str, options: list[str], created_by: int):
         poll_id = await self.db.create_poll(guild.id, channel.id, question, json.dumps(options, ensure_ascii=False), created_by)
-        emb = await self.build_poll_embed(guild, poll_id)
-        view = PollView(self, poll_id, options)
-        msg = await channel.send(embed=emb, view=view)
+        view = await self.build_poll_view(guild, poll_id, options)
+        msg = await channel.send(view=view)
         await self.db.set_poll_message(poll_id, msg.id)
         return poll_id
 
@@ -62,6 +61,38 @@ class PollService:
         emb.set_footer(text=f"ID {poll_id} • {created_at}")
         return emb
 
+    async def build_poll_view(self, guild: discord.Guild, poll_id: int, options: list[str] | None = None):
+        row = await self.db.get_poll(poll_id)
+        if not row:
+            return None
+        _, _, _, _, question, options_json, _, status, created_at = row
+        options = options or json.loads(options_json)
+        votes = await self.db.list_poll_votes(poll_id)
+        total = max(1, len(votes))
+        counts = [0 for _ in options]
+        for idx in votes:
+            if 0 <= idx < len(counts):
+                counts[idx] += 1
+
+        arrow2 = em(self.settings, "arrow2", guild) or "»"
+        info = em(self.settings, "info", guild) or "ℹ️"
+        status_label = "OFFEN" if status == "open" else "GESCHLOSSEN"
+
+        lines = []
+        for i, opt in enumerate(options):
+            pct = int((counts[i] / total) * 100) if total else 0
+            lines.append(f"**{i+1}. {opt}**\n{self._bar(pct)} • {counts[i]} Stimme(n)")
+        desc = f"{arrow2} {question}\n\n" + "\n\n".join(lines)
+
+        container = discord.ui.Container(accent_colour=self._color(guild))
+        container.add_item(discord.ui.TextDisplay(f"**{info} 𑁉 UMFRAGE • {status_label}**"))
+        container.add_item(discord.ui.Separator())
+        container.add_item(discord.ui.TextDisplay(desc))
+        container.add_item(discord.ui.Separator())
+        container.add_item(discord.ui.TextDisplay(f"ID {poll_id} • {created_at}"))
+
+        return PollView(self, poll_id, options, container=container)
+
     async def vote(self, interaction: discord.Interaction, poll_id: int, option_index: int):
         if not interaction.guild or not isinstance(interaction.user, discord.Member):
             return await interaction.response.send_message("Nur im Server nutzbar.", ephemeral=True)
@@ -73,8 +104,9 @@ class PollService:
             return await interaction.response.send_message("Umfrage ist geschlossen.", ephemeral=True)
         await self.db.add_poll_vote(poll_id, interaction.user.id, int(option_index))
         try:
-            emb = await self.build_poll_embed(interaction.guild, poll_id)
-            await interaction.message.edit(embed=emb)
+            view = await self.build_poll_view(interaction.guild, poll_id)
+            if view:
+                await interaction.message.edit(view=view)
         except Exception:
             pass
         await interaction.response.send_message("Stimme gespeichert.", ephemeral=True)
@@ -143,7 +175,18 @@ class PollSelect(discord.ui.Select):
         await self.service.vote(interaction, self.poll_id, idx)
 
 
-class PollView(discord.ui.View):
-    def __init__(self, service: PollService, poll_id: int, options: list[str], custom_id: str | None = None):
+class PollView(discord.ui.LayoutView):
+    def __init__(
+        self,
+        service: PollService,
+        poll_id: int,
+        options: list[str],
+        custom_id: str | None = None,
+        container: discord.ui.Container | None = None,
+    ):
         super().__init__(timeout=None)
-        self.add_item(PollSelect(service, poll_id, options, custom_id=custom_id))
+        if container:
+            self.add_item(container)
+        row = discord.ui.ActionRow()
+        row.add_item(PollSelect(service, poll_id, options, custom_id=custom_id))
+        self.add_item(row)
