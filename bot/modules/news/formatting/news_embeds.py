@@ -87,7 +87,7 @@ def build_news_embed(settings, guild: discord.Guild | None, item: NewsItem) -> d
     return emb
 
 
-def build_news_view(settings, guild: discord.Guild | None, item: NewsItem) -> discord.ui.LayoutView:
+def build_news_view(settings, guild: discord.Guild | None, item: NewsItem, ping_text: str | None = None) -> discord.ui.LayoutView:
     arrow2 = em(settings, "arrow2", guild) or "»"
     info = em(settings, "info", guild) or "📰"
 
@@ -102,6 +102,9 @@ def build_news_view(settings, guild: discord.Guild | None, item: NewsItem) -> di
 
     view = discord.ui.LayoutView(timeout=None)
     container = discord.ui.Container(accent_colour=_color(settings, guild))
+    if ping_text:
+        container.add_item(discord.ui.TextDisplay(str(ping_text)))
+        container.add_item(discord.ui.Separator())
     container.add_item(discord.ui.TextDisplay(f"{header}\n**{title}**"))
     container.add_item(discord.ui.Separator())
     container.add_item(discord.ui.TextDisplay(f"{arrow2} {desc}"))

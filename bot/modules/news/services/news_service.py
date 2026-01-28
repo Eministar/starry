@@ -66,6 +66,16 @@ class NewsService:
             ok = ok or sent
         return ok, err
 
+    async def send_latest_youtube(self, guild: discord.Guild, handle: str) -> tuple[bool, str | None]:
+        source = self._find_youtube_source(guild, handle)
+        if not source:
+            return False, "YouTube-Quelle nicht gefunden."
+        source_key = self._source_key(source, 0)
+        item = await self._fetch_latest_source(guild, source)
+        if not item:
+            return False, "Kein Video gefunden."
+        return await self._maybe_send_latest(guild, source_key, item, force=True)
+
     def _interval_minutes(self, guild: discord.Guild) -> float:
         try:
             return float(self.settings.get_guild(guild.id, "news.interval_minutes", 30) or 30)
@@ -108,9 +118,9 @@ class NewsService:
         if not force and last_id and last_id == item.id:
             return False, None
 
-        content = self._build_ping_content(guild)
-        view = build_news_view(self.settings, guild, item)
-        msg = await channel.send(content=content, view=view)
+        ping_text = self._build_ping_content(guild)
+        view = build_news_view(self.settings, guild, item, ping_text=ping_text)
+        msg = await channel.send(view=view)
 
         try:
             last_map[str(source_key)] = item.id
@@ -165,6 +175,21 @@ class NewsService:
             return f"tagesschau:{api_url or idx}"
         url = str(src.get("url") or "").strip()
         return f"{t}:{url or idx}"
+
+    def _find_youtube_source(self, guild: discord.Guild, handle: str) -> dict | None:
+        h = str(handle or "").strip().lstrip("@").lower()
+        sources = self.settings.get_guild(guild.id, "news.sources", []) or []
+        for src in sources:
+            if not isinstance(src, dict):
+                continue
+            if str(src.get("type") or "").strip().lower() != "youtube":
+                continue
+            name = str(src.get("name") or "").strip().lower()
+            handle_val = str(src.get("handle") or "").strip().lstrip("@").lower()
+            channel_id = str(src.get("channel_id") or "").strip().lower()
+            if h in {name, handle_val, channel_id}:
+                return src
+        return None
 
     async def _fetch_latest_source(self, guild: discord.Guild, src: dict) -> NewsItem | None:
         t = str(src.get("type") or "rss").strip().lower()
@@ -531,7 +556,8 @@ class NewsService:
                     "subscribers": payload.get("channel_subscribers"),
                 },
             )
-            view = build_news_view(self.settings, guild, item)
+            ping_text = self._build_ping_content(guild)
+            view = build_news_view(self.settings, guild, item, ping_text=ping_text)
             try:
                 await msg.edit(view=view)
                 updated = True
