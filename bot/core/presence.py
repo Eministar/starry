@@ -64,6 +64,7 @@ class PresenceRotator:
         giveaways_open = await self._fetch_count("SELECT COUNT(*) FROM giveaways WHERE status = 'open'")
         polls_open = await self._fetch_count("SELECT COUNT(*) FROM polls WHERE status = 'open'")
         applications_open = await self._fetch_count("SELECT COUNT(*) FROM applications WHERE status = 'open'")
+        wzs_submissions = await self._fetch_count("SELECT COUNT(*) FROM wzs_submissions")
 
         return {
             "total_tickets": total_tickets,
@@ -76,6 +77,7 @@ class PresenceRotator:
             "giveaways_open": giveaways_open,
             "polls_open": polls_open,
             "applications_open": applications_open,
+            "wzs_submissions": wzs_submissions,
         }
 
     @tasks.loop(seconds=20)
@@ -93,6 +95,7 @@ class PresenceRotator:
             (discord.ActivityType.watching, f"🎁 𑁉 Giveaways offen: {s['giveaways_open']}"),
             (discord.ActivityType.watching, f"📊 𑁉 Umfragen offen: {s['polls_open']}"),
             (discord.ActivityType.watching, f"📝 𑁉 Bewerbungen offen: {s['applications_open']}"),
+            (discord.ActivityType.watching, f"📜 𑁉 Weisheiten: {s['wzs_submissions']}"),
             (discord.ActivityType.watching, f"👥 𑁉 User im System: {s['total_users']}"),
         ]
 

@@ -29,6 +29,12 @@ from bot.modules.news.services.news_service import NewsService
 from bot.modules.placeholders.services.placeholder_service import PlaceholderService
 from bot.modules.welcome.cogs.welcome_listener import WelcomeListener
 from bot.modules.welcome.services.welcome_service import WelcomeService
+from bot.modules.ai.cogs.mention_ai_listener import MentionAIListener
+from bot.modules.ai.services.deepseek_service import DeepSeekService
+from bot.modules.wort_zum_sonntag.cogs.wort_commands import WortCommands
+from bot.modules.wort_zum_sonntag.services.wort_service import WortZumSonntagService
+from bot.modules.wort_zum_sonntag.views.panel import WortPanelView
+from bot.modules.wort_zum_sonntag.views.info import WortInfoView
 
 from bot.modules.moderation.cogs.moderation_commands import ModerationCommands  
 from bot.modules.logs.cogs.modlog_listener import ModLogListener
@@ -78,6 +84,8 @@ class StarryBot(commands.Bot):
         self.application_service = ApplicationService(self, self.settings, self.db, self.logger)
         self.placeholder_service = PlaceholderService(self, self.settings, self.db, self.logger)
         self.welcome_service = WelcomeService(self, self.settings, self.db, self.logger)
+        self.wzs_service = WortZumSonntagService(self, self.settings, self.db, self.logger)
+        self.deepseek_service = DeepSeekService(self, self.settings, self.logger)
 
         self.forum_logs = ForumLogService(self, self.settings, self.db)
         self._boot_done = False
@@ -108,6 +116,8 @@ class StarryBot(commands.Bot):
         await self.add_cog(TempVoiceCommands(self))
         await self.add_cog(NewsCommands(self))
         await self.add_cog(WelcomeListener(self))
+        await self.add_cog(MentionAIListener(self))
+        await self.add_cog(WortCommands(self))
 
         await self.add_cog(ModerationCommands(self))
         await self.add_cog(ModLogListener(self))
@@ -119,6 +129,8 @@ class StarryBot(commands.Bot):
         self.add_dynamic_items(ApplicationDecisionButton)
         self.add_view(ApplicationPanelView())
         self.add_view(SupportPanelView())
+        self.add_view(WortPanelView(self.wzs_service))
+        self.add_view(WortInfoView(self.wzs_service))
 
         @self.tree.error
         async def on_app_command_error(interaction: discord.Interaction, error: app_commands.AppCommandError):
@@ -223,6 +235,7 @@ class StarryBot(commands.Bot):
     @placeholder_loop.error
     async def placeholder_loop_error(self, error: Exception):
             await self._emit_bot_error("placeholder_loop", error, extra=None, guild=None)
+
 
     async def on_ready(self):
         if self._boot_done:

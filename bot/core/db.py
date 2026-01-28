@@ -304,6 +304,25 @@ class Database:
         """)
         await self._conn.execute(
             "CREATE INDEX IF NOT EXISTS idx_applications_user ON applications(guild_id, user_id)")
+        await self._conn.execute("""
+        CREATE TABLE IF NOT EXISTS wzs_submissions (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            guild_id INTEGER NOT NULL,
+            user_id INTEGER NOT NULL,
+            thread_id INTEGER NOT NULL,
+            message_id INTEGER NOT NULL,
+            content TEXT NOT NULL,
+            status TEXT NOT NULL,
+            created_at TEXT NOT NULL,
+            decided_by INTEGER,
+            decided_at TEXT,
+            posted_at TEXT,
+            posted_channel_id INTEGER,
+            posted_message_id INTEGER
+        );
+        """)
+        await self._conn.execute(
+            "CREATE INDEX IF NOT EXISTS idx_wzs_status ON wzs_submissions(guild_id, status)")
 
         await self._conn.commit()
         await self._ensure_birthdays_global_seed()
@@ -1138,6 +1157,110 @@ class Database:
         )
         rows = await cur.fetchall()
         return rows
+
+    async def create_wzs_submission(
+        self,
+        guild_id: int,
+        user_id: int,
+        thread_id: int,
+        message_id: int,
+        content: str,
+    ):
+        created_at = await self.now_iso()
+        await self._conn.execute(
+            """
+            INSERT INTO wzs_submissions (
+                guild_id, user_id, thread_id, message_id, content, status, created_at
+            )
+            VALUES (?, ?, ?, ?, ?, 'pending', ?);
+            """,
+            (
+                int(guild_id),
+                int(user_id),
+                int(thread_id),
+                int(message_id),
+                str(content),
+                created_at,
+            ),
+        )
+        await self._conn.commit()
+        cur = await self._conn.execute("SELECT last_insert_rowid();")
+        row = await cur.fetchone()
+        return int(row[0])
+
+    async def get_wzs_submission(self, submission_id: int):
+        cur = await self._conn.execute(
+            """
+            SELECT id, guild_id, user_id, thread_id, message_id, content, status,
+                   created_at, decided_by, decided_at, posted_at, posted_channel_id, posted_message_id
+            FROM wzs_submissions
+            WHERE id = ?
+            LIMIT 1;
+            """,
+            (int(submission_id),),
+        )
+        return await cur.fetchone()
+
+    async def get_wzs_submission_by_thread(self, guild_id: int, thread_id: int):
+        cur = await self._conn.execute(
+            """
+            SELECT id, user_id, message_id, content, status, created_at, decided_by, decided_at,
+                   posted_at, posted_channel_id, posted_message_id
+            FROM wzs_submissions
+            WHERE guild_id = ? AND thread_id = ?
+            ORDER BY id DESC
+            LIMIT 1;
+            """,
+            (int(guild_id), int(thread_id)),
+        )
+        return await cur.fetchone()
+
+    async def set_wzs_status(self, submission_id: int, status: str, actor_id: int | None = None):
+        decided_at = await self.now_iso()
+        await self._conn.execute(
+            """
+            UPDATE wzs_submissions
+            SET status = ?, decided_by = ?, decided_at = ?
+            WHERE id = ?;
+            """,
+            (
+                str(status),
+                int(actor_id) if actor_id else None,
+                decided_at,
+                int(submission_id),
+            ),
+        )
+        await self._conn.commit()
+
+    async def mark_wzs_posted(self, submission_id: int, channel_id: int, message_id: int):
+        posted_at = await self.now_iso()
+        await self._conn.execute(
+            """
+            UPDATE wzs_submissions
+            SET status = 'posted', posted_at = ?, posted_channel_id = ?, posted_message_id = ?
+            WHERE id = ?;
+            """,
+            (
+                posted_at,
+                int(channel_id),
+                int(message_id),
+                int(submission_id),
+            ),
+        )
+        await self._conn.commit()
+
+    async def list_wzs_candidates(self, guild_id: int, limit: int = 200):
+        cur = await self._conn.execute(
+            """
+            SELECT id, user_id, content, thread_id, created_at
+            FROM wzs_submissions
+            WHERE guild_id = ? AND status = 'accepted'
+            ORDER BY created_at ASC
+            LIMIT ?;
+            """,
+            (int(guild_id), int(limit)),
+        )
+        return await cur.fetchall()
 
     async def count_tickets_by_status(self) -> dict:
         cur = await self._conn.execute("""
