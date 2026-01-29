@@ -5,6 +5,7 @@ import ast
 import re
 import math
 import operator as op
+import time
 from dataclasses import dataclass
 
 import discord
@@ -67,6 +68,7 @@ class CountingService:
         self.logger = logger
         self._cache: dict[int, CountingState] = {}
         self._locks: dict[int, asyncio.Lock] = {}
+        self._cooldowns: dict[tuple[int, int], float] = {}
 
     def _get_lock(self, channel_id: int) -> asyncio.Lock:
         lock = self._locks.get(channel_id)
@@ -99,6 +101,9 @@ class CountingService:
     def _channel_name_channel_id(self, guild_id: int, fallback: int) -> int:
         cid = int(self.settings.get_guild_int(guild_id, "counting.channel_name_channel_id", 0) or 0)
         return cid if cid else fallback
+
+    def _count_timeout_seconds(self, guild_id: int) -> int:
+        return int(self.settings.get_guild_int(guild_id, "counting.timeout_seconds", 0) or 0)
 
     def _render_template(self, template: str, values: dict[str, int | str]) -> str:
         out = str(template or "")
@@ -181,6 +186,21 @@ class CountingService:
             return rounded
         except Exception:
             return None
+
+    async def _send_notice(self, message: discord.Message, text: str, delete_after: int = 6):
+        try:
+            notice = await message.reply(text, mention_author=False)
+        except Exception:
+            return
+        if delete_after and delete_after > 0:
+            async def _cleanup(msg: discord.Message):
+                try:
+                    await asyncio.sleep(delete_after)
+                    await msg.delete()
+                except Exception:
+                    pass
+
+            asyncio.create_task(_cleanup(notice))
 
     async def get_state(self, channel_id: int, guild_id: int) -> CountingState:
         cached = self._cache.get(channel_id)
@@ -288,6 +308,23 @@ class CountingService:
 
         lock = self._get_lock(channel_id)
         async with lock:
+            timeout_seconds = self._count_timeout_seconds(guild_id)
+            if timeout_seconds > 0:
+                key = (channel_id, int(message.author.id))
+                last_ts = self._cooldowns.get(key)
+                if last_ts is not None:
+                    remaining = timeout_seconds - (time.monotonic() - last_ts)
+                    if remaining > 0:
+                        try:
+                            await message.delete()
+                        except Exception:
+                            pass
+                        await self._send_notice(
+                            message,
+                            f"⏳ Warte bitte noch **{int(math.ceil(remaining))}s** bevor du wieder zählen darfst.",
+                        )
+                        return
+
             state = await self.get_state(channel_id, guild_id)
 
             if not self._allow_consecutive(guild_id):
@@ -296,6 +333,10 @@ class CountingService:
                         await message.delete()
                     except Exception:
                         pass
+                    await self._send_notice(
+                        message,
+                        "🚫 Du darfst nicht zweimal hintereinander zählen.",
+                    )
                     return
 
             value = self.evaluate_expression(content)
@@ -304,7 +345,7 @@ class CountingService:
                     message,
                     state,
                     guild_id,
-                    reason="Ungueltige Rechnung.",
+                    reason="Ungültige Rechnung – nur Scheiße gesendet.",
                     expected=state.current_number,
                     got=None,
                 )
@@ -335,6 +376,7 @@ class CountingService:
             except Exception:
                 pass
 
+            self._cooldowns[(channel_id, int(message.author.id))] = time.monotonic()
             await self._update_channel_name(message.guild, channel_id, state, last_value=value)
 
             if self._milestone_every(guild_id) > 0 and value % self._milestone_every(guild_id) == 0:
@@ -376,6 +418,7 @@ class CountingService:
             expected=expected,
             got=got,
             highscore=state.highscore,
+            total_fails=state.total_fails,
             reset_to=state.current_number,
         )
         try:

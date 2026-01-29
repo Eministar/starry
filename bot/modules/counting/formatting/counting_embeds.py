@@ -43,6 +43,7 @@ def build_counting_fail_embed(
     expected: int | None,
     got: int | None,
     highscore: int,
+    total_fails: int,
     reset_to: int = 1,
 ) -> discord.Embed:
     red = em(settings, "red", guild) or "🔴"
@@ -55,7 +56,8 @@ def build_counting_fail_embed(
         f"┏`🎯` - Erwartet: {exp}\n"
         f"┣`📨` - Gesendet: {got_val}\n"
         f"┣`🏆` - Highscore: **{highscore}**\n"
-        f"┗`🔁` - Reset: **{reset_to}**"
+        f"┣`🔁` - Reset: **{reset_to}**\n"
+        f"┗`💥` - Reset-Count: **{total_fails}**"
     )
 
     emb = discord.Embed(
