@@ -15,6 +15,9 @@ from bot.modules.news.formatting.news_embeds import NewsItem, build_news_view
 
 _YT_CHANNEL_RE = re.compile(r'"channelId":"(UC[^"]+)"')
 _YT_EXTERNAL_RE = re.compile(r'"externalId":"(UC[^"]+)"')
+_YT_CHANNEL_URL_RE = re.compile(r"/channel/(UC[a-zA-Z0-9_-]{16,})")
+_YT_USER_URL_RE = re.compile(r"/user/([^/?#]+)")
+_YT_HANDLE_URL_RE = re.compile(r"/@([^/?#]+)")
 
 
 class NewsService:
@@ -69,7 +72,9 @@ class NewsService:
     async def send_latest_youtube(self, guild: discord.Guild, handle: str) -> tuple[bool, str | None]:
         source = self._find_youtube_source(guild, handle)
         if not source:
-            return False, "YouTube-Quelle nicht gefunden."
+            source = await self._resolve_youtube_input_source(handle)
+            if not source:
+                return False, "YouTube-Quelle nicht gefunden."
         source_key = self._source_key(source, 0)
         item = await self._fetch_latest_source(guild, source)
         if not item:
@@ -382,15 +387,69 @@ class NewsService:
             )
         return None
 
+    async def _resolve_youtube_input_source(self, value: str) -> dict | None:
+        raw = str(value or "").strip()
+        if not raw:
+            return None
+        h = raw.strip().lstrip("@")
+        if raw.startswith("UC"):
+            return {"type": "youtube", "name": raw, "channel_id": raw}
+        if raw.startswith("@"):
+            return {"type": "youtube", "name": raw, "handle": h}
+        if "youtube.com" in raw or "youtu.be" in raw:
+            channel_id = self._extract_channel_id_from_url(raw)
+            if channel_id:
+                return {"type": "youtube", "name": raw, "channel_id": channel_id}
+            handle = self._extract_handle_from_url(raw)
+            if handle:
+                return {"type": "youtube", "name": raw, "handle": handle}
+            user = self._extract_user_from_url(raw)
+            if user:
+                return {"type": "youtube", "name": raw, "user": user}
+            channel_id = await self._resolve_channel_id_from_page(raw)
+            if channel_id:
+                return {"type": "youtube", "name": raw, "channel_id": channel_id}
+        return {"type": "youtube", "name": raw, "handle": h}
+
+    def _extract_channel_id_from_url(self, url: str) -> str | None:
+        m = _YT_CHANNEL_URL_RE.search(str(url))
+        return m.group(1) if m else None
+
+    def _extract_handle_from_url(self, url: str) -> str | None:
+        m = _YT_HANDLE_URL_RE.search(str(url))
+        return m.group(1) if m else None
+
+    def _extract_user_from_url(self, url: str) -> str | None:
+        m = _YT_USER_URL_RE.search(str(url))
+        return m.group(1) if m else None
+
+    async def _resolve_channel_id_from_page(self, url: str) -> str | None:
+        html = await self._fetch_text(str(url))
+        if not html:
+            return None
+        m = _YT_CHANNEL_RE.search(html) or _YT_EXTERNAL_RE.search(html)
+        if not m:
+            return None
+        return m.group(1)
+
     async def _resolve_youtube_feed_url(self, src: dict) -> str | None:
         channel_id = str(src.get("channel_id") or "").strip()
         handle = str(src.get("handle") or "").strip().lstrip("@")
         user = str(src.get("user") or "").strip()
+        url = str(src.get("url") or src.get("channel_url") or "").strip()
 
         if channel_id:
             return f"https://www.youtube.com/feeds/videos.xml?channel_id={channel_id}"
         if user:
             return f"https://www.youtube.com/feeds/videos.xml?user={user}"
+        if url:
+            channel_id = self._extract_channel_id_from_url(url)
+            if channel_id:
+                return f"https://www.youtube.com/feeds/videos.xml?channel_id={channel_id}"
+            handle = self._extract_handle_from_url(url) or handle
+            user = self._extract_user_from_url(url) or user
+            if user:
+                return f"https://www.youtube.com/feeds/videos.xml?user={user}"
         if not handle:
             return None
 

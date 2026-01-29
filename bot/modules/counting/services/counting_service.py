@@ -18,7 +18,7 @@ from bot.modules.counting.formatting.counting_embeds import (
 )
 
 
-_ALLOWED_CHARS = re.compile(r"^[0-9A-Za-z_.,+\-*/%^()\s]+$")
+_ALLOWED_CHARS = re.compile(r"^[0-9A-Za-z_.,+\-*/%^=()\s]+$")
 _ALLOWED_FUNCS: dict[str, object] = {
     "abs": abs,
     "round": round,
@@ -168,22 +168,26 @@ class CountingService:
     def evaluate_expression(self, content: str) -> int | None:
         try:
             expr = content.replace(" ", "").replace("^", "**").replace(",", ".")
-            node = ast.parse(expr, mode="eval")
-            value = self._eval_ast(node)
-            if value is None:
+            parts = [p for p in expr.split("=") if p != ""]
+            if not parts:
                 return None
-            if isinstance(value, bool):
+            values: list[int] = []
+            for part in parts:
+                node = ast.parse(part, mode="eval")
+                value = self._eval_ast(node)
+                if value is None or isinstance(value, bool) or not isinstance(value, (int, float)):
+                    return None
+                if not math.isfinite(value):
+                    return None
+                rounded = int(round(value))
+                if abs(value - rounded) > 1e-9 or rounded < 0:
+                    return None
+                values.append(rounded)
+            if not values:
                 return None
-            if not isinstance(value, (int, float)):
+            if len(set(values)) != 1:
                 return None
-            if not math.isfinite(value):
-                return None
-            rounded = int(round(value))
-            if abs(value - rounded) > 1e-9:
-                return None
-            if rounded < 0:
-                return None
-            return rounded
+            return values[0]
         except Exception:
             return None
 
@@ -424,7 +428,15 @@ class CountingService:
         try:
             await message.reply(embed=emb, mention_author=False)
         except Exception:
-            pass
+            try:
+                exp = str(expected) if expected is not None else "—"
+                got_val = str(got) if got is not None else "—"
+                await message.channel.send(
+                    f"🚫 **Counting-Fehler**: {reason}\n"
+                    f"Erwartet: {exp} · Gesendet: {got_val} · Reset: {state.current_number}"
+                )
+            except Exception:
+                pass
         try:
             await message.add_reaction(em(self.settings, "red", message.guild) or "❌")
         except Exception:
