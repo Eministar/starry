@@ -7,6 +7,7 @@ from dataclasses import dataclass
 
 import discord
 
+from bot.utils.emojis import em
 from bot.modules.counting.formatting.counting_embeds import (
     build_counting_fail_embed,
     build_counting_milestone_embed,
@@ -279,7 +280,7 @@ class CountingService:
             await self.save_state(channel_id, guild_id, state)
 
             try:
-                await message.add_reaction("?")
+                await message.add_reaction(em(self.settings, "green", message.guild) or "✅")
             except Exception:
                 pass
 
@@ -331,7 +332,7 @@ class CountingService:
         except Exception:
             pass
         try:
-            await message.add_reaction("?")
+            await message.add_reaction(em(self.settings, "red", message.guild) or "❌")
         except Exception:
             pass
 
