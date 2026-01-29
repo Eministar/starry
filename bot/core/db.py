@@ -290,6 +290,19 @@ class Database:
         await self._conn.execute(
             "CREATE INDEX IF NOT EXISTS idx_user_channel_stats_user ON user_channel_stats(guild_id, user_id)")
         await self._conn.execute("""
+        CREATE TABLE IF NOT EXISTS counting_states (
+            guild_id INTEGER NOT NULL,
+            channel_id INTEGER NOT NULL,
+            current_number INTEGER NOT NULL,
+            last_user_id INTEGER,
+            highscore INTEGER NOT NULL,
+            total_counts INTEGER NOT NULL,
+            total_fails INTEGER NOT NULL,
+            updated_at TEXT NOT NULL,
+            PRIMARY KEY (guild_id, channel_id)
+        );
+        """)
+        await self._conn.execute("""
         CREATE TABLE IF NOT EXISTS applications (
             id INTEGER PRIMARY KEY AUTOINCREMENT,
             guild_id INTEGER NOT NULL,
@@ -1504,5 +1517,54 @@ class Database:
         await self._conn.execute(
             "DELETE FROM tempvoice_rooms WHERE guild_id = ? AND channel_id = ?;",
             (int(guild_id), int(channel_id)),
+        )
+        await self._conn.commit()
+
+    async def get_counting_state(self, guild_id: int, channel_id: int):
+        cur = await self._conn.execute(
+            """
+            SELECT guild_id, channel_id, current_number, last_user_id, highscore, total_counts, total_fails, updated_at
+            FROM counting_states
+            WHERE guild_id = ? AND channel_id = ?
+            LIMIT 1;
+            """,
+            (int(guild_id), int(channel_id)),
+        )
+        return await cur.fetchone()
+
+    async def upsert_counting_state(
+        self,
+        guild_id: int,
+        channel_id: int,
+        current_number: int,
+        last_user_id: int | None,
+        highscore: int,
+        total_counts: int,
+        total_fails: int,
+    ):
+        updated_at = await self.now_iso()
+        await self._conn.execute(
+            """
+            INSERT INTO counting_states
+            (guild_id, channel_id, current_number, last_user_id, highscore, total_counts, total_fails, updated_at)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+            ON CONFLICT(guild_id, channel_id) DO UPDATE SET
+                current_number=excluded.current_number,
+                last_user_id=excluded.last_user_id,
+                highscore=excluded.highscore,
+                total_counts=excluded.total_counts,
+                total_fails=excluded.total_fails,
+                updated_at=excluded.updated_at;
+            """,
+            (
+                int(guild_id),
+                int(channel_id),
+                int(current_number),
+                int(last_user_id) if last_user_id is not None else None,
+                int(highscore),
+                int(total_counts),
+                int(total_fails),
+                updated_at,
+            ),
         )
         await self._conn.commit()

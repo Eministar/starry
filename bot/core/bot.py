@@ -31,6 +31,8 @@ from bot.modules.welcome.cogs.welcome_listener import WelcomeListener
 from bot.modules.welcome.services.welcome_service import WelcomeService
 from bot.modules.ai.cogs.mention_ai_listener import MentionAIListener
 from bot.modules.ai.services.deepseek_service import DeepSeekService
+from bot.modules.counting.cogs.counting_listener import CountingListener
+from bot.modules.counting.services.counting_service import CountingService
 from bot.modules.wort_zum_sonntag.cogs.wort_commands import WortCommands
 from bot.modules.wort_zum_sonntag.services.wort_service import WortZumSonntagService
 from bot.modules.wort_zum_sonntag.views.panel import WortPanelView
@@ -86,6 +88,7 @@ class StarryBot(commands.Bot):
         self.welcome_service = WelcomeService(self, self.settings, self.db, self.logger)
         self.wzs_service = WortZumSonntagService(self, self.settings, self.db, self.logger)
         self.deepseek_service = DeepSeekService(self, self.settings, self.logger)
+        self.counting_service = CountingService(self, self.settings, self.db, self.logger)
 
         self.forum_logs = ForumLogService(self, self.settings, self.db)
         self._boot_done = False
@@ -117,6 +120,7 @@ class StarryBot(commands.Bot):
         await self.add_cog(NewsCommands(self))
         await self.add_cog(WelcomeListener(self))
         await self.add_cog(MentionAIListener(self))
+        await self.add_cog(CountingListener(self))
         await self.add_cog(WortCommands(self))
 
         await self.add_cog(ModerationCommands(self))
@@ -256,6 +260,11 @@ class StarryBot(commands.Bot):
             if self.birthday_service:
                 try:
                     await self.birthday_service.ensure_roles(guild)
+                except Exception:
+                    pass
+            if self.counting_service:
+                try:
+                    await self.counting_service.sync_guild(guild)
                 except Exception:
                     pass
         if self.poll_service:
