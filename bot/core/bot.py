@@ -56,6 +56,8 @@ from bot.modules.seelsorge.services.seelsorge_service import SeelsorgeService
 from bot.modules.seelsorge.cogs.seelsorge_commands import SeelsorgeCommands
 from bot.modules.seelsorge.cogs.seelsorge_listener import SeelsorgeListener
 from bot.modules.seelsorge.views.panel import SeelsorgePanelView
+from bot.modules.invites.services.invite_service import InviteService
+from bot.modules.invites.cogs.invite_listener import InviteListener
 from bot.modules.parlament.services.parlament_service import ParliamentService
 from bot.modules.parlament.cogs.parlament_commands import ParliamentCommands
 
@@ -100,6 +102,7 @@ class StarryBot(commands.Bot):
         self.counting_service = CountingService(self, self.settings, self.db, self.logger)
         self.seelsorge_service = SeelsorgeService(self, self.settings, self.db, self.logger)
         self.parlament_service = ParliamentService(self, self.settings, self.db, self.logger)
+        self.invite_service = InviteService(self, self.settings, self.db, self.logger)
 
         self.forum_logs = ForumLogService(self, self.settings, self.db)
         self._boot_done = False
@@ -140,6 +143,7 @@ class StarryBot(commands.Bot):
         await self.add_cog(FunCommands(self))
         await self.add_cog(SeelsorgeListener(self))
         await self.add_cog(SeelsorgeCommands(self))
+        await self.add_cog(InviteListener(self))
         await self.add_cog(ParliamentCommands(self))
         await self.add_cog(ModerationCommands(self))
         await self.add_cog(ModLogListener(self))

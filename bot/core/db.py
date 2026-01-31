@@ -254,6 +254,7 @@ class Database:
             PRIMARY KEY (guild_id, user_id)
         );
         """)
+        await self._ensure_user_stats_columns()
         await self._conn.execute("""
         CREATE TABLE IF NOT EXISTS user_channel_stats (
             guild_id INTEGER NOT NULL,
@@ -348,6 +349,17 @@ class Database:
         );
         """)
         await self._conn.execute("""
+        CREATE TABLE IF NOT EXISTS invite_joins (
+            guild_id INTEGER NOT NULL,
+            member_id INTEGER NOT NULL,
+            inviter_id INTEGER NOT NULL,
+            invite_code TEXT NOT NULL,
+            joined_at TEXT NOT NULL,
+            left_at TEXT,
+            PRIMARY KEY (guild_id, member_id)
+        );
+        """)
+        await self._conn.execute("""
         CREATE TABLE IF NOT EXISTS parliament_stats (
             guild_id INTEGER NOT NULL,
             user_id INTEGER NOT NULL,
@@ -378,6 +390,20 @@ class Database:
             PRIMARY KEY (vote_id, user_id)
         );
         """)
+
+    async def _ensure_user_stats_columns(self):
+        await self._ensure_column("user_stats", "invite_count", "INTEGER NOT NULL DEFAULT 0")
+        await self._ensure_column("user_stats", "invite_left_count", "INTEGER NOT NULL DEFAULT 0")
+
+    async def _ensure_column(self, table: str, column: str, decl: str):
+        try:
+            cur = await self._conn.execute(f"PRAGMA table_info({table});")
+            rows = await cur.fetchall()
+            cols = {str(r[1]) for r in rows if r}
+            if column not in cols:
+                await self._conn.execute(f"ALTER TABLE {table} ADD COLUMN {column} {decl};")
+        except Exception:
+            pass
 
         await self._conn.commit()
         await self._ensure_birthdays_global_seed()
@@ -655,6 +681,24 @@ class Database:
         """, (int(guild_id), int(user_id)))
         await self._conn.commit()
 
+    async def increment_invite(self, guild_id: int, user_id: int):
+        await self._conn.execute("""
+        INSERT INTO user_stats (guild_id, user_id, message_count, voice_seconds, welcome_count, xp, level, invite_count, invite_left_count)
+        VALUES (?, ?, 0, 0, 0, 0, 0, 1, 0)
+        ON CONFLICT(guild_id, user_id) DO UPDATE SET
+            invite_count = invite_count + 1;
+        """, (int(guild_id), int(user_id)))
+        await self._conn.commit()
+
+    async def increment_invite_left(self, guild_id: int, user_id: int):
+        await self._conn.execute("""
+        INSERT INTO user_stats (guild_id, user_id, message_count, voice_seconds, welcome_count, xp, level, invite_count, invite_left_count)
+        VALUES (?, ?, 0, 0, 0, 0, 0, 0, 1)
+        ON CONFLICT(guild_id, user_id) DO UPDATE SET
+            invite_left_count = invite_left_count + 1;
+        """, (int(guild_id), int(user_id)))
+        await self._conn.commit()
+
     async def add_voice_seconds(self, guild_id: int, user_id: int, seconds: int, xp_delta: int):
         now = await self.now_iso()
         await self._conn.execute("""
@@ -669,7 +713,8 @@ class Database:
 
     async def get_user_stats(self, guild_id: int, user_id: int):
         cur = await self._conn.execute("""
-        SELECT guild_id, user_id, message_count, voice_seconds, welcome_count, xp, level, last_message_at, last_voice_at
+        SELECT guild_id, user_id, message_count, voice_seconds, welcome_count, xp, level,
+               last_message_at, last_voice_at, invite_count, invite_left_count
         FROM user_stats WHERE guild_id = ? AND user_id = ? LIMIT 1;
         """, (int(guild_id), int(user_id)))
         return await cur.fetchone()
@@ -689,6 +734,41 @@ class Database:
         LIMIT ?;
         """, (int(guild_id), int(user_id), int(limit)))
         return await cur.fetchall()
+
+    async def add_invite_join(self, guild_id: int, member_id: int, inviter_id: int, invite_code: str):
+        joined_at = await self.now_iso()
+        await self._conn.execute(
+            """
+            INSERT OR REPLACE INTO invite_joins (
+                guild_id, member_id, inviter_id, invite_code, joined_at, left_at
+            )
+            VALUES (?, ?, ?, ?, ?, NULL);
+            """,
+            (int(guild_id), int(member_id), int(inviter_id), str(invite_code), str(joined_at)),
+        )
+        await self._conn.commit()
+
+    async def get_invite_join(self, guild_id: int, member_id: int):
+        cur = await self._conn.execute(
+            """
+            SELECT guild_id, member_id, inviter_id, invite_code, joined_at, left_at
+            FROM invite_joins
+            WHERE guild_id = ? AND member_id = ?
+            LIMIT 1;
+            """,
+            (int(guild_id), int(member_id)),
+        )
+        return await cur.fetchone()
+
+    async def mark_invite_left(self, guild_id: int, member_id: int):
+        left_at = await self.now_iso()
+        await self._conn.execute(
+            """
+            UPDATE invite_joins SET left_at = ? WHERE guild_id = ? AND member_id = ?;
+            """,
+            (str(left_at), int(guild_id), int(member_id)),
+        )
+        await self._conn.commit()
 
     async def count_users_with_messages_at_least(self, guild_id: int, count: int):
         cur = await self._conn.execute("""

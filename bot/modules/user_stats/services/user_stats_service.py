@@ -499,6 +499,8 @@ class UserStatsService:
             "level": int(row[6]),
             "last_message_at": row[7],
             "last_voice_at": row[8],
+            "invite_count": int(row[9]) if len(row) > 9 else 0,
+            "invite_left_count": int(row[10]) if len(row) > 10 else 0,
         }
 
     async def _check_achievements(self, member: discord.Member, stats: dict):
@@ -591,6 +593,9 @@ class UserStatsService:
         voice_days = round(int(stats.get("voice_seconds", 0)) / 86400, 2)
         msg_count = int(stats.get("message_count", 0))
         welcome_count = int(stats.get("welcome_count", 0))
+        invite_count = int(stats.get("invite_count", 0))
+        invite_left_count = int(stats.get("invite_left_count", 0))
+        invite_net = max(0, invite_count - invite_left_count)
         level = int(stats.get("level", 0))
         xp = int(stats.get("xp", 0))
         _, current_total, next_total = self._level_progress(xp)
@@ -625,6 +630,7 @@ class UserStatsService:
                 f"┏`💬` - Nachrichten: **{msg_count}** (Top {msg_top_pct}%)\n"
                 f"┣`🎙️` - Voice: **{voice_hours}h** ({voice_days} Tage) (Top {voice_top_pct}%)\n"
                 f"┣`👋` - Welcome: **{welcome_count}**\n"
+                f"┣`📨` - Invites: **{invite_count}** (Left {invite_left_count} • Net {invite_net})\n"
                 f"┣`🎫` - Tickets: **{tickets}**\n"
                 f"┣`📌` - Aktivster Channel: {top_channel}\n"
                 f"┣`⭐` - Level: **{level}** (XP {xp}/{next_total} • {pct}%)\n"
