@@ -69,6 +69,10 @@ class CountingService:
         self._cache: dict[int, CountingState] = {}
         self._locks: dict[int, asyncio.Lock] = {}
         self._cooldowns: dict[tuple[int, int], float] = {}
+        self._channel_name_tasks: dict[int, asyncio.Task] = {}
+        self._channel_name_pending: dict[int, dict[str, int]] = {}
+        self._channel_topic_tasks: dict[int, asyncio.Task] = {}
+        self._channel_topic_pending: dict[int, dict[str, int]] = {}
 
     def _get_lock(self, channel_id: int) -> asyncio.Lock:
         lock = self._locks.get(channel_id)
@@ -110,6 +114,17 @@ class CountingService:
         for key, val in values.items():
             out = out.replace("{" + key + "}", str(val))
         return out.strip()
+
+    def _build_channel_topic(self, state: CountingState) -> str:
+        last_count = max(0, int(state.current_number) - 1)
+        attempts = int(state.total_counts) + int(state.total_fails)
+        topic = (
+            f"🔢 Letzter Count: {last_count} | "
+            f"✅ Counts: {int(state.total_counts)} | "
+            f"❌ Fails: {int(state.total_fails)} | "
+            f"💬 Gesamt: {attempts}"
+        )
+        return topic.strip()
 
     def _is_candidate_expression(self, content: str) -> bool:
         if not content:
@@ -269,12 +284,37 @@ class CountingService:
             return
 
         count_val = last_value if last_value is not None else max(0, state.current_number - 1)
+        await self._update_channel_name_values(
+            guild,
+            channel_id,
+            template,
+            count_val=int(count_val),
+            next_val=int(state.current_number),
+            highscore=int(state.highscore),
+        )
+
+    async def _update_channel_name_values(
+        self,
+        guild: discord.Guild,
+        channel_id: int,
+        template: str,
+        count_val: int,
+        next_val: int,
+        highscore: int,
+    ):
+        if not template:
+            return
+        target_id = self._channel_name_channel_id(guild.id, channel_id)
+        ch = guild.get_channel(int(target_id))
+        if not isinstance(ch, discord.abc.GuildChannel):
+            return
+
         rendered = self._render_template(
             template,
             {
                 "count": int(count_val),
-                "next": int(state.current_number),
-                "highscore": int(state.highscore),
+                "next": int(next_val),
+                "highscore": int(highscore),
             },
         )
         if not rendered:
@@ -286,6 +326,98 @@ class CountingService:
             except Exception:
                 pass
 
+    def _schedule_channel_name_update(
+        self,
+        guild: discord.Guild,
+        channel_id: int,
+        state: CountingState,
+        last_value: int | None = None,
+    ):
+        if not self._channel_name_enabled(guild.id):
+            return
+        template = self._channel_name_template(guild.id)
+        if not template:
+            return
+
+        count_val = int(last_value) if last_value is not None else max(0, int(state.current_number) - 1)
+        payload = {
+            "count": int(count_val),
+            "next": int(state.current_number),
+            "highscore": int(state.highscore),
+        }
+        self._channel_name_pending[int(channel_id)] = payload
+
+        existing = self._channel_name_tasks.get(int(channel_id))
+        if existing and not existing.done():
+            return
+
+        async def _runner():
+            try:
+                await asyncio.sleep(2)
+                data = self._channel_name_pending.get(int(channel_id))
+                if not data:
+                    return
+                await self._update_channel_name_values(
+                    guild,
+                    channel_id,
+                    template,
+                    count_val=data["count"],
+                    next_val=data["next"],
+                    highscore=data["highscore"],
+                )
+            finally:
+                self._channel_name_tasks.pop(int(channel_id), None)
+
+        self._channel_name_tasks[int(channel_id)] = asyncio.create_task(_runner())
+
+    def _schedule_channel_topic_update(
+        self,
+        guild: discord.Guild,
+        channel_id: int,
+        state: CountingState,
+    ):
+        topic = self._build_channel_topic(state)
+        if not topic:
+            return
+
+        payload = {
+            "last": max(0, int(state.current_number) - 1),
+            "counts": int(state.total_counts),
+            "fails": int(state.total_fails),
+        }
+        self._channel_topic_pending[int(channel_id)] = payload
+
+        existing = self._channel_topic_tasks.get(int(channel_id))
+        if existing and not existing.done():
+            return
+
+        async def _runner():
+            try:
+                await asyncio.sleep(3)
+                data = self._channel_topic_pending.get(int(channel_id))
+                if not data:
+                    return
+                ch = guild.get_channel(int(channel_id))
+                if not ch or not hasattr(ch, "topic"):
+                    return
+                attempts = int(data["counts"]) + int(data["fails"])
+                rendered = (
+                    f"🔢 Letzter Count: {int(data['last'])} | "
+                    f"✅ Counts: {int(data['counts'])} | "
+                    f"❌ Fails: {int(data['fails'])} | "
+                    f"💬 Gesamt: {attempts}"
+                ).strip()
+                rendered = rendered[:900]
+                if getattr(ch, "topic", None) != rendered:
+                    try:
+                        await ch.edit(topic=rendered, reason="Counting topic update")
+                    except Exception:
+                        pass
+            finally:
+                self._channel_topic_tasks.pop(int(channel_id), None)
+
+        self._channel_topic_tasks[int(channel_id)] = asyncio.create_task(_runner())
+
     async def sync_guild(self, guild: discord.Guild):
         if not guild or not self._enabled(guild.id):
             return
@@ -293,7 +425,8 @@ class CountingService:
         if not channel_id:
             return
         state = await self.get_state(channel_id, guild.id)
-        await self._update_channel_name(guild, channel_id, state)
+        self._schedule_channel_name_update(guild, channel_id, state)
+        self._schedule_channel_topic_update(guild, channel_id, state)
 
     async def handle_message(self, message: discord.Message):
         if not message.guild:
@@ -311,6 +444,15 @@ class CountingService:
             return
 
         lock = self._get_lock(channel_id)
+        action = None
+        remaining = None
+        value = None
+        prev_highscore = None
+        state = None
+        fail_reason = None
+        expected = None
+        got = None
+
         async with lock:
             timeout_seconds = self._count_timeout_seconds(guild_id)
             if timeout_seconds > 0:
@@ -319,102 +461,131 @@ class CountingService:
                 if last_ts is not None:
                     remaining = timeout_seconds - (time.monotonic() - last_ts)
                     if remaining > 0:
-                        try:
-                            await message.delete()
-                        except Exception:
-                            pass
-                        await self._send_notice(
-                            message,
-                            f"⏳ Warte bitte noch **{int(math.ceil(remaining))}s** bevor du wieder zählen darfst.",
-                        )
-                        return
+                        action = "cooldown"
+            if action:
+                pass
+            else:
+                state = await self.get_state(channel_id, guild_id)
 
-            state = await self.get_state(channel_id, guild_id)
-
-            if not self._allow_consecutive(guild_id):
+            if action:
+                pass
+            elif not self._allow_consecutive(guild_id):
                 if state.last_user_id and int(state.last_user_id) == int(message.author.id):
-                    try:
-                        await message.delete()
-                    except Exception:
-                        pass
-                    await self._send_notice(
-                        message,
-                        "🚫 Du darfst nicht zweimal hintereinander zählen.",
-                    )
-                    return
+                    action = "consecutive"
 
-            value = self.evaluate_expression(content)
-            if value is None:
-                await self._handle_fail(
-                    message,
-                    state,
-                    guild_id,
-                    reason="Ungültige Rechnung – nur Scheiße gesendet.",
-                    expected=state.current_number,
-                    got=None,
-                )
-                return
+            if action:
+                pass
+            else:
+                value = self.evaluate_expression(content)
 
-            if int(value) != int(state.current_number):
-                await self._handle_fail(
-                    message,
-                    state,
-                    guild_id,
-                    reason="Falsch gezaehlt.",
-                    expected=state.current_number,
-                    got=value,
-                )
-                return
+            if action:
+                pass
+            elif value is None:
+                fail_reason = "Ungültige Rechnung – nur Scheiße gesendet."
+                expected = state.current_number
+                got = None
+                await self._apply_fail_state(channel_id, guild_id, state)
+                action = "fail"
+            elif int(value) != int(state.current_number):
+                fail_reason = "Falsch gezaehlt."
+                expected = state.current_number
+                got = value
+                await self._apply_fail_state(channel_id, guild_id, state)
+                action = "fail"
+            else:
+                prev_highscore = int(state.highscore)
+                state.total_counts += 1
+                state.last_user_id = int(message.author.id)
+                if value > state.highscore:
+                    state.highscore = int(value)
+                state.current_number = int(value) + 1
 
-            prev_highscore = int(state.highscore)
-            state.total_counts += 1
-            state.last_user_id = int(message.author.id)
-            if value > state.highscore:
-                state.highscore = int(value)
-            state.current_number = int(value) + 1
+                await self.save_state(channel_id, guild_id, state)
+                self._cooldowns[(channel_id, int(message.author.id))] = time.monotonic()
+                action = "success"
 
-            await self.save_state(channel_id, guild_id, state)
-
+        if action == "cooldown":
             try:
-                await message.add_reaction(em(self.settings, "green", message.guild) or "✅")
+                await message.delete()
             except Exception:
                 pass
+            await self._send_notice(
+                message,
+                f"⏳ Warte bitte noch **{int(math.ceil(remaining))}s** bevor du wieder zählen darfst.",
+            )
+            return
 
-            self._cooldowns[(channel_id, int(message.author.id))] = time.monotonic()
-            await self._update_channel_name(message.guild, channel_id, state, last_value=value)
+        if action == "consecutive":
+            try:
+                await message.delete()
+            except Exception:
+                pass
+            await self._send_notice(
+                message,
+                "🚫 Du darfst nicht zweimal hintereinander zählen.",
+            )
+            return
 
-            if self._milestone_every(guild_id) > 0 and value % self._milestone_every(guild_id) == 0:
-                emb = build_counting_milestone_embed(
-                    self.settings,
-                    message.guild,
-                    milestone=value,
-                    highscore=state.highscore,
-                    total_counts=state.total_counts,
-                    total_fails=state.total_fails,
-                )
-                await message.channel.send(embed=emb)
-            elif (
-                self._record_every(guild_id) > 0
-                and value > prev_highscore
-                and prev_highscore > 0
-                and value % self._record_every(guild_id) == 0
-            ):
-                emb = build_counting_record_embed(self.settings, message.guild, value, state.highscore)
-                await message.channel.send(embed=emb)
+        if action == "fail":
+            await self._notify_fail(
+                message,
+                state,
+                reason=fail_reason or "Falsch gezaehlt.",
+                expected=expected,
+                got=got,
+            )
+            return
 
-    async def _handle_fail(
+        if action != "success":
+            return
+
+        try:
+            await message.add_reaction(em(self.settings, "green", message.guild) or "✅")
+        except Exception:
+            pass
+
+        self._schedule_channel_name_update(message.guild, channel_id, state, last_value=value)
+        self._schedule_channel_topic_update(message.guild, channel_id, state)
+
+        if self._milestone_every(guild_id) > 0 and value % self._milestone_every(guild_id) == 0:
+            emb = build_counting_milestone_embed(
+                self.settings,
+                message.guild,
+                milestone=value,
+                highscore=state.highscore,
+                total_counts=state.total_counts,
+                total_fails=state.total_fails,
+            )
+            await message.channel.send(embed=emb)
+        elif (
+            self._record_every(guild_id) > 0
+            and value > prev_highscore
+            and prev_highscore > 0
+            and value % self._record_every(guild_id) == 0
+        ):
+            emb = build_counting_record_embed(self.settings, message.guild, value, state.highscore)
+            await message.channel.send(embed=emb)
+
+        return
+
+    async def _apply_fail_state(
+        self,
+        channel_id: int,
+        guild_id: int,
+        state: CountingState,
+    ):
+        state.total_fails += 1
+        self._apply_reset(state)
+        await self.save_state(channel_id, guild_id, state)
+
+    async def _notify_fail(
         self,
         message: discord.Message,
         state: CountingState,
-        guild_id: int,
         reason: str,
         expected: int | None,
         got: int | None,
     ):
-        state.total_fails += 1
-        self._apply_reset(state)
-        await self.save_state(int(message.channel.id), guild_id, state)
-
         emb = build_counting_fail_embed(
             self.settings,
             message.guild,
@@ -442,6 +613,17 @@ class CountingService:
         except Exception:
             pass
 
-        await self._update_channel_name(message.guild, int(message.channel.id), state)
+        self._schedule_channel_name_update(message.guild, int(message.channel.id), state)
+        self._schedule_channel_topic_update(message.guild, int(message.channel.id), state)
 
-        return
+    async def _handle_fail(
+        self,
+        message: discord.Message,
+        state: CountingState,
+        guild_id: int,
+        reason: str,
+        expected: int | None,
+        got: int | None,
+    ):
+        await self._apply_fail_state(int(message.channel.id), guild_id, state)
+        await self._notify_fail(message, state, reason=reason, expected=expected, got=got)
