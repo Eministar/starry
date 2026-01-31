@@ -349,6 +349,16 @@ class Database:
         );
         """)
         await self._conn.execute("""
+        CREATE TABLE IF NOT EXISTS beichte_threads (
+            guild_id INTEGER NOT NULL,
+            thread_id INTEGER NOT NULL,
+            user_id INTEGER NOT NULL,
+            anonymous INTEGER NOT NULL,
+            created_at TEXT NOT NULL,
+            PRIMARY KEY (guild_id, thread_id)
+        );
+        """)
+        await self._conn.execute("""
         CREATE TABLE IF NOT EXISTS invite_joins (
             guild_id INTEGER NOT NULL,
             member_id INTEGER NOT NULL,
@@ -1358,6 +1368,43 @@ class Database:
             """
             SELECT guild_id, thread_id, user_id, anonymous, created_at
             FROM seelsorge_threads
+            WHERE guild_id = ? AND thread_id = ?
+            LIMIT 1;
+            """,
+            (int(guild_id), int(thread_id)),
+        )
+        return await cur.fetchone()
+
+    async def create_beichte_thread(
+        self,
+        guild_id: int,
+        thread_id: int,
+        user_id: int,
+        anonymous: bool,
+    ):
+        created_at = await self.now_iso()
+        await self._conn.execute(
+            """
+            INSERT OR REPLACE INTO beichte_threads (
+                guild_id, thread_id, user_id, anonymous, created_at
+            )
+            VALUES (?, ?, ?, ?, ?);
+            """,
+            (
+                int(guild_id),
+                int(thread_id),
+                int(user_id),
+                1 if anonymous else 0,
+                created_at,
+            ),
+        )
+        await self._conn.commit()
+
+    async def get_beichte_thread(self, guild_id: int, thread_id: int):
+        cur = await self._conn.execute(
+            """
+            SELECT guild_id, thread_id, user_id, anonymous, created_at
+            FROM beichte_threads
             WHERE guild_id = ? AND thread_id = ?
             LIMIT 1;
             """,

@@ -56,6 +56,10 @@ from bot.modules.seelsorge.services.seelsorge_service import SeelsorgeService
 from bot.modules.seelsorge.cogs.seelsorge_commands import SeelsorgeCommands
 from bot.modules.seelsorge.cogs.seelsorge_listener import SeelsorgeListener
 from bot.modules.seelsorge.views.panel import SeelsorgePanelView
+from bot.modules.beichte.services.beichte_service import BeichteService
+from bot.modules.beichte.cogs.beichte_commands import BeichteCommands
+from bot.modules.beichte.cogs.beichte_listener import BeichteListener
+from bot.modules.beichte.views.info import BeichteInfoView
 from bot.modules.invites.services.invite_service import InviteService
 from bot.modules.invites.cogs.invite_listener import InviteListener
 from bot.modules.parlament.services.parlament_service import ParliamentService
@@ -101,6 +105,7 @@ class StarryBot(commands.Bot):
         self.deepseek_service = DeepSeekService(self, self.settings, self.logger)
         self.counting_service = CountingService(self, self.settings, self.db, self.logger)
         self.seelsorge_service = SeelsorgeService(self, self.settings, self.db, self.logger)
+        self.beichte_service = BeichteService(self, self.settings, self.db, self.logger)
         self.parlament_service = ParliamentService(self, self.settings, self.db, self.logger)
         self.invite_service = InviteService(self, self.settings, self.db, self.logger)
 
@@ -143,6 +148,8 @@ class StarryBot(commands.Bot):
         await self.add_cog(FunCommands(self))
         await self.add_cog(SeelsorgeListener(self))
         await self.add_cog(SeelsorgeCommands(self))
+        await self.add_cog(BeichteListener(self))
+        await self.add_cog(BeichteCommands(self))
         await self.add_cog(InviteListener(self))
         await self.add_cog(ParliamentCommands(self))
         await self.add_cog(ModerationCommands(self))
@@ -158,6 +165,7 @@ class StarryBot(commands.Bot):
         self.add_view(WortPanelView(self.wzs_service))
         self.add_view(WortInfoView(self.wzs_service))
         self.add_view(SeelsorgePanelView(self.seelsorge_service))
+        self.add_view(BeichteInfoView(self.beichte_service))
 
         @self.tree.error
         async def on_app_command_error(interaction: discord.Interaction, error: app_commands.AppCommandError):
