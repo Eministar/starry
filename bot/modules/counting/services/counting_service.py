@@ -74,8 +74,10 @@ class CountingService:
         self._cooldowns: dict[tuple[int, int], float] = {}
         self._channel_name_tasks: dict[int, asyncio.Task] = {}
         self._channel_name_pending: dict[int, dict[str, int]] = {}
+        self._channel_name_versions: dict[int, int] = {}
         self._channel_topic_tasks: dict[int, asyncio.Task] = {}
         self._channel_topic_pending: dict[int, dict[str, int]] = {}
+        self._channel_topic_versions: dict[int, int] = {}
 
     def _get_lock(self, channel_id: int) -> asyncio.Lock:
         lock = self._locks.get(channel_id)
@@ -132,9 +134,19 @@ class CountingService:
     def _is_candidate_expression(self, content: str) -> bool:
         if not content:
             return False
-        if not _ALLOWED_CHARS.match(content):
-            return False
         return any(ch.isdigit() for ch in content)
+
+    def _extract_single_int(self, content: str) -> int | None:
+        nums = re.findall(r"\d+", content)
+        if len(nums) != 1:
+            return None
+        try:
+            value = int(nums[0])
+        except Exception:
+            return None
+        if value < 0:
+            return None
+        return value
 
     def _eval_ast(self, node: ast.AST) -> int | None:
         if isinstance(node, ast.Expression):
@@ -244,6 +256,12 @@ class CountingService:
                 last_count_user_id=int(row[9]) if len(row) > 9 and row[9] is not None else None,
                 last_count_at=str(row[10]) if len(row) > 10 and row[10] is not None else None,
             )
+            if state.last_count_value is None and int(state.current_number) > 1:
+                state.last_count_value = int(state.current_number) - 1
+                try:
+                    await self.save_state(channel_id, guild_id, state)
+                except Exception:
+                    pass
         else:
             state = CountingState()
         self._cache[channel_id] = state
@@ -303,6 +321,11 @@ class CountingService:
             return
         target_id = self._channel_name_channel_id(guild.id, channel_id)
         ch = guild.get_channel(int(target_id))
+        if not isinstance(ch, discord.abc.GuildChannel):
+            try:
+                ch = await guild.fetch_channel(int(target_id))
+            except Exception:
+                return
         if not isinstance(ch, discord.abc.GuildChannel):
             return
 
@@ -369,6 +392,7 @@ class CountingService:
             "highscore": int(state.highscore),
         }
         self._channel_name_pending[int(channel_id)] = payload
+        self._channel_name_versions[int(channel_id)] = int(self._channel_name_versions.get(int(channel_id), 0)) + 1
 
         existing = self._channel_name_tasks.get(int(channel_id))
         if existing and not existing.done():
@@ -376,18 +400,22 @@ class CountingService:
 
         async def _runner():
             try:
-                await asyncio.sleep(2)
-                data = self._channel_name_pending.get(int(channel_id))
-                if not data:
-                    return
-                await self._update_channel_name_values(
-                    guild,
-                    channel_id,
-                    template,
-                    count_val=data["count"],
-                    next_val=data["next"],
-                    highscore=data["highscore"],
-                )
+                while True:
+                    version = int(self._channel_name_versions.get(int(channel_id), 0))
+                    await asyncio.sleep(0.4)
+                    data = self._channel_name_pending.get(int(channel_id))
+                    if not data:
+                        return
+                    await self._update_channel_name_values(
+                        guild,
+                        channel_id,
+                        template,
+                        count_val=data["count"],
+                        next_val=data["next"],
+                        highscore=data["highscore"],
+                    )
+                    if int(self._channel_name_versions.get(int(channel_id), 0)) == version:
+                        return
             finally:
                 self._channel_name_tasks.pop(int(channel_id), None)
 
@@ -406,6 +434,7 @@ class CountingService:
             "fails": int(state.total_fails),
         }
         self._channel_topic_pending[int(channel_id)] = payload
+        self._channel_topic_versions[int(channel_id)] = int(self._channel_topic_versions.get(int(channel_id), 0)) + 1
 
         existing = self._channel_topic_tasks.get(int(channel_id))
         if existing and not existing.done():
@@ -413,29 +442,38 @@ class CountingService:
 
         async def _runner():
             try:
-                await asyncio.sleep(3)
-                data = self._channel_topic_pending.get(int(channel_id))
-                if not data:
-                    return
-                ch = guild.get_channel(int(channel_id))
-                if not ch or not hasattr(ch, "topic"):
-                    return
-                last_count_value = data.get("last_count_value")
-                current_number = int(data.get("current_number") or 1)
-                last_count = int(last_count_value) if last_count_value is not None else max(0, current_number - 1)
-                streak = max(0, current_number - 1)
-                total_msgs = int(data["counts"]) + int(data["fails"])
-                rendered = (
-                    f"🔢 • Letzter Count: {last_count} | "
-                    f"🔁 • Streak: {streak} | "
-                    f"💬 • Gesamt: {total_msgs}"
-                ).strip()
-                rendered = rendered[:900]
-                if getattr(ch, "topic", None) != rendered:
-                    try:
-                        await ch.edit(topic=rendered, reason="Counting topic update")
-                    except Exception:
-                        pass
+                while True:
+                    version = int(self._channel_topic_versions.get(int(channel_id), 0))
+                    await asyncio.sleep(0.6)
+                    data = self._channel_topic_pending.get(int(channel_id))
+                    if not data:
+                        return
+                    ch = guild.get_channel(int(channel_id))
+                    if not ch or not hasattr(ch, "topic"):
+                        try:
+                            ch = await guild.fetch_channel(int(channel_id))
+                        except Exception:
+                            return
+                    if not ch or not hasattr(ch, "topic"):
+                        return
+                    last_count_value = data.get("last_count_value")
+                    current_number = int(data.get("current_number") or 1)
+                    last_count = int(last_count_value) if last_count_value is not None else max(0, current_number - 1)
+                    streak = max(0, current_number - 1)
+                    total_msgs = int(data["counts"]) + int(data["fails"])
+                    rendered = (
+                        f"🔢 • Letzter Count: {last_count} | "
+                        f"🔁 • Streak: {streak} | "
+                        f"💬 • Gesamt: {total_msgs}"
+                    ).strip()
+                    rendered = rendered[:900]
+                    if getattr(ch, "topic", None) != rendered:
+                        try:
+                            await ch.edit(topic=rendered, reason="Counting topic update")
+                        except Exception:
+                            pass
+                    if int(self._channel_topic_versions.get(int(channel_id), 0)) == version:
+                        return
             finally:
                 self._channel_topic_tasks.pop(int(channel_id), None)
 
@@ -500,6 +538,8 @@ class CountingService:
                 pass
             else:
                 value = self.evaluate_expression(content)
+                if value is None:
+                    value = self._extract_single_int(content)
 
             if action:
                 pass
