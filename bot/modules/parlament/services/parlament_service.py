@@ -60,6 +60,16 @@ class ParliamentService:
                 continue
         return out
 
+    def _fixed_member_ids(self, guild_id: int) -> list[int]:
+        raw = self._g(guild_id, "parlament.fixed_member_user_ids", []) or []
+        out = []
+        for v in raw:
+            try:
+                out.append(int(v))
+            except Exception:
+                continue
+        return out
+
     async def _get_channel(self, guild: discord.Guild, channel_id: int) -> discord.TextChannel | None:
         if not channel_id:
             return None
@@ -79,12 +89,15 @@ class ParliamentService:
         return guild.get_role(int(role_id))
 
     async def _fetch_members(self, guild: discord.Guild) -> list[discord.Member]:
+        members = list(getattr(guild, "members", []) or [])
+        if members:
+            return members
         members = []
         try:
             async for member in guild.fetch_members(limit=None):
                 members.append(member)
         except Exception:
-            members = list(getattr(guild, "members", []) or [])
+            members = []
         return members
 
     async def _resolve_candidates(self, guild: discord.Guild) -> list[discord.Member]:
@@ -125,10 +138,17 @@ class ParliamentService:
         candidates = await self._resolve_candidates(guild)
         members = await self._resolve_members(guild)
 
-        candidate_ids = {int(m.id) for m in candidates}
-        members = [m for m in members if int(m.id) not in candidate_ids]
+        fixed_ids = self._fixed_member_ids(guild.id)
+        fixed_members = []
+        for uid in fixed_ids:
+            m = guild.get_member(int(uid))
+            if m:
+                fixed_members.append(m)
 
-        user_ids = [int(m.id) for m in candidates] + [int(m.id) for m in members]
+        candidate_ids = {int(m.id) for m in candidates}
+        members = [m for m in members if int(m.id) not in candidate_ids and int(m.id) not in {int(x.id) for x in fixed_members}]
+
+        user_ids = [int(m.id) for m in candidates] + [int(m.id) for m in members] + [int(m.id) for m in fixed_members]
         rows = await self.db.list_parliament_stats(guild.id, user_ids)
         stats_map = {int(r[1]): (int(r[2]), int(r[3])) for r in rows or []}
 
@@ -138,6 +158,7 @@ class ParliamentService:
             candidates,
             members,
             stats_map,
+            fixed_members=fixed_members,
             updated_at=datetime.now(timezone.utc),
         )
 

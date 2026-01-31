@@ -25,22 +25,22 @@ def _color(settings, guild: discord.Guild | None) -> int:
     return parse_hex_color(value)
 
 
-def _status_emoji(status: discord.Status | None) -> str:
-    if status == discord.Status.online:
+def _status_emoji(status: discord.Status | str | None) -> str:
+    if status == "online" or status == discord.Status.online:
         return "🟢"
-    if status == discord.Status.dnd:
+    if status == "dnd" or status == discord.Status.dnd:
         return "🔴"
-    if status == discord.Status.idle:
+    if status == "idle" or status == discord.Status.idle:
         return "🟠"
     return "⚫"
 
 
-def _status_order(status: discord.Status | None) -> int:
-    if status == discord.Status.online:
+def _status_order(status: discord.Status | str | None) -> int:
+    if status == "online" or status == discord.Status.online:
         return 0
-    if status == discord.Status.dnd:
+    if status == "dnd" or status == discord.Status.dnd:
         return 1
-    if status == discord.Status.idle:
+    if status == "idle" or status == discord.Status.idle:
         return 2
     return 3
 
@@ -52,7 +52,8 @@ def _stats_line(stats: tuple[int, int] | None) -> str:
 
 
 def _member_line(member: discord.Member, stats: tuple[int, int] | None) -> str:
-    emoji = _status_emoji(getattr(member, "status", None))
+    raw = getattr(member, "raw_status", None) or getattr(member, "status", None)
+    emoji = _status_emoji(raw)
     return f"{emoji} {member.mention} — {_stats_line(stats)}"
 
 
@@ -62,18 +63,21 @@ def build_parliament_panel_embed(
     candidates: list[discord.Member],
     members: list[discord.Member],
     stats_map: dict[int, tuple[int, int]],
+    fixed_members: list[discord.Member] | None = None,
     updated_at: datetime | None = None,
 ):
     palace = em(settings, "palace", guild) or "🏛️"
     arrow2 = em(settings, "arrow2", guild) or "»"
+    info = em(settings, "info", guild) or "ℹ️"
 
+    fixed_members = fixed_members or []
     candidates_sorted = sorted(
         candidates,
-        key=lambda m: (_status_order(getattr(m, "status", None)), m.display_name.lower()),
+        key=lambda m: (_status_order(getattr(m, "raw_status", None) or getattr(m, "status", None)), m.display_name.lower()),
     )
     members_sorted = sorted(
         members,
-        key=lambda m: (_status_order(getattr(m, "status", None)), m.display_name.lower()),
+        key=lambda m: (_status_order(getattr(m, "raw_status", None) or getattr(m, "status", None)), m.display_name.lower()),
     )
 
     cand_lines = [
@@ -82,22 +86,51 @@ def build_parliament_panel_embed(
     mem_lines = [
         _member_line(m, stats_map.get(int(m.id))) for m in members_sorted
     ]
+    fixed_lines = [
+        _member_line(m, stats_map.get(int(m.id))) for m in fixed_members
+    ]
 
     if not cand_lines:
         cand_lines = ["—"]
     if not mem_lines:
         mem_lines = ["—"]
+    if not fixed_lines:
+        fixed_lines = ["—"]
 
+    intro = (
+        f"{arrow2} Repräsentieren die Members in unseren Team-Sitzungen, planen Events\n"
+        f"{arrow2} und koordinieren die BKT-Zeitung. Amtszeit: **2 Wochen**."
+    )
+    leaders_block = "\n".join(fixed_lines)
+    cand_block = "\n".join(cand_lines)
+    mem_block = "\n".join(mem_lines)
     desc = (
-        f"{arrow2} Live-Status aller Kandidaten und Mitglieder.\n\n"
-        f"**Kandidaten ({len(candidates)})**\n" + "\n".join(cand_lines) + "\n\n"
-        f"**Mitglieder ({len(members)})**\n" + "\n".join(mem_lines)
+        f"{intro}\n\n"
+        f"┏`👑` - Leitung: {len(fixed_members)}\n"
+        f"┣`🧩` - Kandidaten: {len(candidates)}\n"
+        f"┗`👥` - Mitglieder: {len(members)}\n\n"
+        f"{info} Live-Status"
     )
 
     emb = discord.Embed(
         title=f"{palace} 𑁉 PARLAMENT – STATUS",
         description=desc,
         color=_color(settings, guild),
+    )
+    emb.add_field(
+        name="Feste Mitglieder (Leitung)",
+        value=leaders_block,
+        inline=False,
+    )
+    emb.add_field(
+        name=f"Kandidaten ({len(candidates)})",
+        value=cand_block,
+        inline=False,
+    )
+    emb.add_field(
+        name=f"Mitglieder ({len(members)})",
+        value=mem_block,
+        inline=False,
     )
     if guild and guild.icon:
         emb.set_thumbnail(url=guild.icon.url)
