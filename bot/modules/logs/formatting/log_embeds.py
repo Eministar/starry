@@ -343,3 +343,15 @@ def build_bot_error_embed(settings, guild: discord.Guild | None, where: str, err
     emb = discord.Embed(title=f"{red} 𑁉 BOT FEHLER", description=desc, color=_color(settings, guild))
     _footer(emb, settings, guild)
     return emb
+
+
+def build_bot_debug_embed(settings, guild: discord.Guild | None, title: str, payload: dict | None = None):
+    wrench = em(settings, "info", guild) or "🛠️"
+    desc = _boxed_kv(payload, inline_code=True)
+    emb = discord.Embed(
+        title=f"{wrench} 𑁉 DEBUG • {str(title).upper()}",
+        description=desc,
+        color=_color(settings, guild),
+    )
+    _footer(emb, settings, guild)
+    return emb

@@ -16,6 +16,7 @@ from bot.modules.counting.formatting.counting_embeds import (
     build_counting_milestone_embed,
     build_counting_record_embed,
 )
+from bot.modules.logs.formatting.log_embeds import build_bot_debug_embed
 
 
 _ALLOWED_CHARS = re.compile(r"^[0-9A-Za-z_.,+\-*/%^=()\s]+$")
@@ -114,6 +115,9 @@ class CountingService:
     def _count_timeout_seconds(self, guild_id: int) -> int:
         return int(self.settings.get_guild_int(guild_id, "counting.timeout_seconds", 0) or 0)
 
+    def _debug_enabled(self, guild_id: int) -> bool:
+        return bool(self.settings.get_guild_bool(guild_id, "counting.debug", True))
+
     def _render_template(self, template: str, values: dict[str, int | str]) -> str:
         out = str(template or "")
         for key, val in values.items():
@@ -130,6 +134,18 @@ class CountingService:
             f"💬 Gesamt: {total_msgs}"
         )
         return topic.strip()
+
+    async def _emit_debug(self, guild: discord.Guild | None, title: str, payload: dict | None = None):
+        if not guild or not self._debug_enabled(guild.id):
+            return
+        logs = getattr(self.bot, "forum_logs", None)
+        if not logs:
+            return
+        try:
+            emb = build_bot_debug_embed(self.settings, guild, title, payload or {})
+            await logs.emit(guild, "bot_errors", emb)
+        except Exception:
+            pass
 
     def _is_candidate_expression(self, content: str) -> bool:
         if not content:
@@ -324,9 +340,26 @@ class CountingService:
         if not isinstance(ch, discord.abc.GuildChannel):
             try:
                 ch = await guild.fetch_channel(int(target_id))
-            except Exception:
+            except Exception as err:
+                await self._emit_debug(
+                    guild,
+                    "counting_channel_fetch_failed",
+                    {
+                        "channel_id": int(channel_id),
+                        "target_id": int(target_id),
+                        "error": type(err).__name__,
+                    },
+                )
                 return
         if not isinstance(ch, discord.abc.GuildChannel):
+            await self._emit_debug(
+                guild,
+                "counting_channel_not_found",
+                {
+                    "channel_id": int(channel_id),
+                    "target_id": int(target_id),
+                },
+            )
             return
 
         count_val = last_value if last_value is not None else max(0, state.current_number - 1)
@@ -369,8 +402,37 @@ class CountingService:
         if ch.name != rendered:
             try:
                 await ch.edit(name=rendered, reason="Counting update")
-            except Exception:
-                pass
+            except discord.Forbidden as err:
+                await self._emit_debug(
+                    guild,
+                    "counting_channel_rename_forbidden",
+                    {
+                        "channel_id": int(channel_id),
+                        "target_id": int(target_id),
+                        "error": type(err).__name__,
+                    },
+                )
+            except discord.HTTPException as err:
+                await self._emit_debug(
+                    guild,
+                    "counting_channel_rename_http",
+                    {
+                        "channel_id": int(channel_id),
+                        "target_id": int(target_id),
+                        "error": type(err).__name__,
+                        "status": getattr(err, "status", None),
+                    },
+                )
+            except Exception as err:
+                await self._emit_debug(
+                    guild,
+                    "counting_channel_rename_error",
+                    {
+                        "channel_id": int(channel_id),
+                        "target_id": int(target_id),
+                        "error": type(err).__name__,
+                    },
+                )
 
     def _schedule_channel_name_update(
         self,
@@ -452,9 +514,25 @@ class CountingService:
                     if not ch or not hasattr(ch, "topic"):
                         try:
                             ch = await guild.fetch_channel(int(channel_id))
-                        except Exception:
+                        except Exception as err:
+                            await self._emit_debug(
+                                guild,
+                                "counting_topic_channel_fetch_failed",
+                                {
+                                    "channel_id": int(channel_id),
+                                    "error": type(err).__name__,
+                                },
+                            )
                             return
                     if not ch or not hasattr(ch, "topic"):
+                        await self._emit_debug(
+                            guild,
+                            "counting_topic_channel_invalid",
+                            {
+                                "channel_id": int(channel_id),
+                                "type": str(getattr(ch, "type", None)),
+                            },
+                        )
                         return
                     last_count_value = data.get("last_count_value")
                     current_number = int(data.get("current_number") or 1)
@@ -470,8 +548,34 @@ class CountingService:
                     if getattr(ch, "topic", None) != rendered:
                         try:
                             await ch.edit(topic=rendered, reason="Counting topic update")
-                        except Exception:
-                            pass
+                        except discord.Forbidden as err:
+                            await self._emit_debug(
+                                guild,
+                                "counting_topic_forbidden",
+                                {
+                                    "channel_id": int(channel_id),
+                                    "error": type(err).__name__,
+                                },
+                            )
+                        except discord.HTTPException as err:
+                            await self._emit_debug(
+                                guild,
+                                "counting_topic_http",
+                                {
+                                    "channel_id": int(channel_id),
+                                    "error": type(err).__name__,
+                                    "status": getattr(err, "status", None),
+                                },
+                            )
+                        except Exception as err:
+                            await self._emit_debug(
+                                guild,
+                                "counting_topic_error",
+                                {
+                                    "channel_id": int(channel_id),
+                                    "error": type(err).__name__,
+                                },
+                            )
                     if int(self._channel_topic_versions.get(int(channel_id), 0)) == version:
                         return
             finally:
