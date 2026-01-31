@@ -51,6 +51,11 @@ from bot.modules.tempvoice.cogs.tempvoice_listener import TempVoiceListener
 from bot.modules.tempvoice.cogs.tempvoice_commands import TempVoiceCommands
 from bot.modules.tempvoice.services.tempvoice_service import TempVoiceService
 from bot.modules.tickets.views.support_panel import SupportPanelView
+from bot.modules.fun.cogs.fun_commands import FunCommands
+from bot.modules.seelsorge.services.seelsorge_service import SeelsorgeService
+from bot.modules.seelsorge.cogs.seelsorge_commands import SeelsorgeCommands
+from bot.modules.seelsorge.cogs.seelsorge_listener import SeelsorgeListener
+from bot.modules.seelsorge.views.panel import SeelsorgePanelView
 
 from bot.core.presence import PresenceRotator
 from bot.modules.logs.forum_log_service import ForumLogService
@@ -91,6 +96,7 @@ class StarryBot(commands.Bot):
         self.wzs_service = WortZumSonntagService(self, self.settings, self.db, self.logger)
         self.deepseek_service = DeepSeekService(self, self.settings, self.logger)
         self.counting_service = CountingService(self, self.settings, self.db, self.logger)
+        self.seelsorge_service = SeelsorgeService(self, self.settings, self.db, self.logger)
 
         self.forum_logs = ForumLogService(self, self.settings, self.db)
         self._boot_done = False
@@ -127,6 +133,9 @@ class StarryBot(commands.Bot):
         await self.add_cog(CountingCommands(self))
         await self.add_cog(WortCommands(self))
 
+        await self.add_cog(FunCommands(self))
+        await self.add_cog(SeelsorgeListener(self))
+        await self.add_cog(SeelsorgeCommands(self))
         await self.add_cog(ModerationCommands(self))
         await self.add_cog(ModLogListener(self))
         await self.add_cog(ChannelRoleLogListener(self))
@@ -139,6 +148,7 @@ class StarryBot(commands.Bot):
         self.add_view(SupportPanelView(self.settings))
         self.add_view(WortPanelView(self.wzs_service))
         self.add_view(WortInfoView(self.wzs_service))
+        self.add_view(SeelsorgePanelView(self.seelsorge_service))
 
         @self.tree.error
         async def on_app_command_error(interaction: discord.Interaction, error: app_commands.AppCommandError):

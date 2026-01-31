@@ -337,6 +337,16 @@ class Database:
         """)
         await self._conn.execute(
             "CREATE INDEX IF NOT EXISTS idx_wzs_status ON wzs_submissions(guild_id, status)")
+        await self._conn.execute("""
+        CREATE TABLE IF NOT EXISTS seelsorge_threads (
+            guild_id INTEGER NOT NULL,
+            thread_id INTEGER NOT NULL,
+            user_id INTEGER NOT NULL,
+            anonymous INTEGER NOT NULL,
+            created_at TEXT NOT NULL,
+            PRIMARY KEY (guild_id, thread_id)
+        );
+        """)
 
         await self._conn.commit()
         await self._ensure_birthdays_global_seed()
@@ -1206,6 +1216,43 @@ class Database:
         cur = await self._conn.execute("SELECT last_insert_rowid();")
         row = await cur.fetchone()
         return int(row[0])
+
+    async def create_seelsorge_thread(
+        self,
+        guild_id: int,
+        thread_id: int,
+        user_id: int,
+        anonymous: bool,
+    ):
+        created_at = await self.now_iso()
+        await self._conn.execute(
+            """
+            INSERT OR REPLACE INTO seelsorge_threads (
+                guild_id, thread_id, user_id, anonymous, created_at
+            )
+            VALUES (?, ?, ?, ?, ?);
+            """,
+            (
+                int(guild_id),
+                int(thread_id),
+                int(user_id),
+                1 if anonymous else 0,
+                created_at,
+            ),
+        )
+        await self._conn.commit()
+
+    async def get_seelsorge_thread(self, guild_id: int, thread_id: int):
+        cur = await self._conn.execute(
+            """
+            SELECT guild_id, thread_id, user_id, anonymous, created_at
+            FROM seelsorge_threads
+            WHERE guild_id = ? AND thread_id = ?
+            LIMIT 1;
+            """,
+            (int(guild_id), int(thread_id)),
+        )
+        return await cur.fetchone()
 
     async def get_wzs_submission(self, submission_id: int):
         cur = await self._conn.execute(
